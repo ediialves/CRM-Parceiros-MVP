@@ -19,6 +19,8 @@ export const PlanModal: React.FC<PlanModalProps> = ({ isOpen, onClose, onSave })
     if (name.trim() && startDate) {
       onSave(name, startDate);
       setName('');
+      // No need to reset startDate here if we want to keep the default for next time, 
+      // but the component might be unmounted anyway.
       onClose();
     }
   };

@@ -29,7 +29,7 @@ export interface Partner {
   percentual_engajamento: number;  // coluna Z
   mrr: number;                     // coluna AB
   exportacoes_90d: number;         // coluna AP
-  gerente_responsavel_id: string;  // ID do gerente para filtro de acesso
+  gerente_id: string;               // ID do gerente para filtro de acesso
 }
 
 export interface Plan {

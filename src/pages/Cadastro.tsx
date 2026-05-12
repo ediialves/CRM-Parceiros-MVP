@@ -26,50 +26,48 @@ export const Cadastro: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    try {
-      // 1. Validar convite
-      const { data: inviteData, error: inviteError } = await supabase
-        .from('users')
-        .select('id, invite_code, invite_used')
-        .eq('invite_code', formData.invite_code.toUpperCase().trim())
-        .eq('invite_used', false)
-        .single();
+    const codigoNormalizado = formData.invite_code.toUpperCase().trim();
 
-      if (inviteError || !inviteData) {
-        throw new Error('Código de convite inválido ou já utilizado.');
+    try {
+      // 1. Validar código via RPC
+      const { data: inviteData, error: inviteError } = await supabase
+        .rpc('validate_invite_code', { code: codigoNormalizado });
+
+      if (inviteError || !inviteData || inviteData.length === 0) {
+        setError('Código de convite inválido ou já utilizado.');
+        setLoading(false);
+        return;
       }
 
       // 2. Criar conta no Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
-        password: formData.password,
-        options: {
-          data: { nome: formData.nome }
-        }
+        password: formData.password
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Erro ao criar conta.');
+      if (authError || !authData.user) {
+        setError('Erro ao criar conta: ' + (authError?.message || 'Erro desconhecido'));
+        setLoading(false);
+        return;
+      }
 
-      // 3. Atualizar registro do usuário na tabela public.users
-      // O registro já existe (criado no import), vamos atualizá-lo com o ID do Auth e marcar convite como usado
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          id: authData.user.id,
-          nome: formData.nome,
-          email: formData.email,
-          invite_used: true,
-          created_at: new Date().toISOString()
-        })
-        .eq('invite_code', formData.invite_code.toUpperCase().trim());
+      // 3. Vincular via RPC
+      const { data: updateSuccess, error: updateError } = await supabase
+        .rpc('complete_invite_signup', {
+          invite_code_input: codigoNormalizado,
+          new_user_id: authData.user.id
+        });
 
-      if (updateError) throw updateError;
+      if (updateError || !updateSuccess) {
+        setError('Erro ao ativar conta. Entre em contato com o administrador.');
+        setLoading(false);
+        return;
+      }
 
+      // 4. Redirecionar
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message);
-    } finally {
+      setError(err.message || 'Ocorreu um erro no cadastro.');
       setLoading(false);
     }
   };

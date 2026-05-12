@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { PartnerList } from '../components/partners/PartnerList';
 import { supabase } from '../lib/supabase';
-import { Partner } from '../types';
+import { Partner, Plan, Task } from '../types';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
@@ -15,26 +15,32 @@ export const Dashboard: React.FC = () => {
     const fetchPartners = async () => {
       try {
         setLoading(true);
-        const { data, error: fetchError } = await supabase
+        const { data: partnersData, error: fetchError } = await supabase
           .from('partners')
-          .select('*')
+          .select(`
+            *,
+            plans (
+              *,
+              tasks (*)
+            )
+          `)
           .order('nome');
 
         if (fetchError) throw fetchError;
         
-        // Conversão simples se necessário (os campos no banco seguem o que foi importado)
-        // O import anterior mapeou accountancy_id para "id" no preview, 
-        // mas no banco a tabela tem accountancy_id.
-        // Vamos garantir que o objeto Partner tenha o 'id' esperado pelo componente (ID do banco ou accountancy_id)
-        const mappedPartners: Partner[] = (data || []).map(p => ({
-          ...p,
-          id: p.accountancy_id // O componente espera .id
-        }));
+        if (partnersData) {
+          // Mapear parceiros para o tipo esperado (incluindo os dados aninhados para uso no List/Card)
+          const mappedPartners = partnersData.map(p => ({
+            ...p,
+            id: p.accountancy_id, // ID de exibição (ex: 70801)
+            id_banco: p.id        // Guardar UUID para referência interna se necessário
+          }));
 
-        setPartners(mappedPartners);
+          setPartners(mappedPartners as any);
+        }
       } catch (err: any) {
-        console.error('Erro ao buscar parceiros:', err);
-        setError(err.message || 'Erro ao carregar parceiros');
+        console.error('Erro ao buscar dados do dashboard:', err);
+        setError(err.message || 'Erro ao carregar dados');
       } finally {
         setLoading(false);
       }
@@ -71,7 +77,9 @@ export const Dashboard: React.FC = () => {
           <p className="text-text-secondary">Importe parceiros na tela de Importação para começar.</p>
         </div>
       ) : (
-        <PartnerList partners={partners} />
+        <PartnerList 
+          partners={partners}
+        />
       )}
     </div>
   );

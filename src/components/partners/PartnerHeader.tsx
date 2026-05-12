@@ -32,7 +32,7 @@ export const PartnerHeader: React.FC<PartnerHeaderProps> = ({ partner }) => {
           </div>
           <div>
             <span className="text-[10px] uppercase font-bold text-text-secondary block">Gerente Responsável</span>
-            <span className="text-sm font-medium">ID: {partner.gerente_responsavel_id}</span>
+            <span className="text-sm font-medium">ID: {partner.gerente_id}</span>
           </div>
         </div>
       </div>
