@@ -36,6 +36,8 @@ export interface Plan {
   id: string;
   partner_id: string;
   titulo: string;
+  contexto?: string;
+  resultado?: string;
   ativo: boolean;
   created_at: string;
 }

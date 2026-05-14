@@ -7,6 +7,7 @@ import { MetricsSection } from '../components/metrics/MetricsSection';
 import { TaskList } from '../components/tasks/TaskList';
 import { TaskModal } from '../components/tasks/TaskModal';
 import { PlanModal } from '../components/plans/PlanModal';
+import { PlanCard } from '../components/plans/PlanCard';
 import { useAuth } from '../context/AuthContext';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Button } from '../components/ui/Button';
@@ -29,6 +30,10 @@ export const PartnerDetail: React.FC = () => {
   const [planToDelete, setPlanToDelete] = useState<Plan | null>(null);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+  const [resultDescription, setResultDescription] = useState('');
+  const [pendingTaskToggle, setPendingTaskToggle] = useState<{taskId: string, planId: string} | null>(null);
+  const [isSavingResult, setIsSavingResult] = useState(false);
 
   // Initial load
   useEffect(() => {
@@ -208,21 +213,95 @@ export const PartnerDetail: React.FC = () => {
     const task = partnerTasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const newStatus: Task['status'] = task.status === 'concluida' ? 'backlog' : 'concluida';
+    // Toggle logic
+    if (task.status === 'concluida') {
+      // Reopening a task - normal flow
+      try {
+        const { error: updateError } = await supabase
+          .from('tasks')
+          .update({ status: 'backlog' })
+          .eq('id', taskId);
 
+        if (updateError) throw updateError;
+
+        setPartnerTasks(prev => prev.map(t => 
+          t.id === taskId ? { ...t, status: 'backlog' } : t
+        ));
+      } catch (err: any) {
+        console.error('Erro ao atualizar status:', err);
+      }
+      return;
+    }
+
+    // Attempting to complete a task
+    const plan = localPlans.find(p => p.id === task.plan_id);
+    const tasksForPlan = partnerTasks.filter(t => t.plan_id === task.plan_id);
+    const remainingTasks = tasksForPlan.filter(t => t.status !== 'concluida');
+
+    // Check if it's the last task and plan result is missing
+    if (remainingTasks.length === 1 && (!plan?.resultado || plan.resultado.trim() === '')) {
+      setPendingTaskToggle({ taskId, planId: task.plan_id });
+      setResultDescription('');
+      setIsResultModalOpen(true);
+      return;
+    }
+
+    // Normal flow
     try {
       const { error: updateError } = await supabase
         .from('tasks')
-        .update({ status: newStatus })
+        .update({ status: 'concluida' })
         .eq('id', taskId);
 
       if (updateError) throw updateError;
 
       setPartnerTasks(prev => prev.map(t => 
-        t.id === taskId ? { ...t, status: newStatus } : t
+        t.id === taskId ? { ...t, status: 'concluida' } : t
       ));
     } catch (err: any) {
       console.error('Erro ao atualizar status:', err);
+    }
+  };
+
+  const handleConfirmResultAndComplete = async () => {
+    if (!pendingTaskToggle || !resultDescription.trim()) return;
+
+    try {
+      setIsSavingResult(true);
+      
+      // 1. Atualizar o plano com o resultado
+      const { data: updatedPlan, error: planError } = await supabase
+        .from('plans')
+        .update({ resultado: resultDescription })
+        .eq('id', pendingTaskToggle.planId)
+        .select()
+        .single();
+
+      if (planError) throw planError;
+
+      // 2. Concluir a task
+      const { error: taskError } = await supabase
+        .from('tasks')
+        .update({ status: 'concluida' })
+        .eq('id', pendingTaskToggle.taskId);
+
+      if (taskError) throw taskError;
+
+      // 3. Atualizar estado local
+      if (updatedPlan) {
+        setLocalPlans(prev => prev.map(p => p.id === updatedPlan.id ? updatedPlan : p));
+      }
+      
+      setPartnerTasks(prev => prev.map(t => 
+        t.id === pendingTaskToggle.taskId ? { ...t, status: 'concluida' } : t
+      ));
+
+      setIsResultModalOpen(false);
+      setPendingTaskToggle(null);
+    } catch (err: any) {
+      console.error('Erro ao salvar resultado e concluir task:', err);
+    } finally {
+      setIsSavingResult(false);
     }
   };
 
@@ -296,17 +375,20 @@ export const PartnerDetail: React.FC = () => {
           </p>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-12">
           {localPlans.length > 0 ? (
             localPlans.map(plan => {
               const tasksForPlan = partnerTasks.filter(t => t.plan_id === plan.id);
+              const planProgress = tasksForPlan.length > 0 
+                ? (tasksForPlan.filter(t => t.status === 'concluida').length / tasksForPlan.length) * 100
+                : 0;
+
               return (
-                <div key={plan.id} className="py-8 border-t border-border group/plan">
-                  <div className="flex items-center justify-between gap-4 mb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-text-primary">{plan.titulo}</h3>
-                        {canCreatePlan && (
+                <div key={plan.id} className="space-y-6 group/plan">
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                       Estratégia: {plan.titulo}
+                       {canCreatePlan && (
                           <button 
                             onClick={() => {
                               setPlanToDelete(plan);
@@ -318,32 +400,37 @@ export const PartnerDetail: React.FC = () => {
                             <Trash2 size={16} />
                           </button>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-text-secondary">
-                        <span className="hidden sm:inline text-gray-300">|</span>
-                        <span>Início: {new Date(plan.data_inicio || plan.created_at).toLocaleDateString('pt-BR')}</span>
-                        <span>·</span>
-                        <span className="font-medium">{tasksForPlan.length} tasks</span>
-                      </div>
-                    </div>
-                    
+                    </h2>
                     <Button 
                       onClick={() => handleAddTask(plan.id)}
                       variant="ghost" 
-                      className="text-primary hover:text-primary-dark text-xs font-bold py-1 h-auto flex items-center gap-1 opacity-0 group-hover/plan:opacity-100 transition-opacity"
+                      className="text-primary hover:text-primary-dark text-xs font-bold py-1 h-auto flex items-center gap-1"
                     >
                       <Plus size={14} />
                       Nova Task
                     </Button>
                   </div>
 
-                  <div className="pl-2">
-                    <TaskList 
-                      tasks={tasksForPlan} 
-                      onEditTask={handleEditTask}
-                      onDeleteTask={handleDeleteTask}
-                      onToggleStatus={handleToggleTaskStatus}
-                    />
+                  <PlanCard 
+                    plan={plan}
+                    tasks={tasksForPlan}
+                    progress={planProgress}
+                    onPlanUpdate={(updated) => setLocalPlans(prev => prev.map(p => p.id === updated.id ? updated : p))}
+                  />
+
+                  <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                    <div className="bg-gray-50/50 px-4 py-2 border-b border-border flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">Checklist de Execução</span>
+                      <span className="text-[10px] text-text-secondary">{tasksForPlan.length} tasks</span>
+                    </div>
+                    <div className="p-2">
+                      <TaskList 
+                        tasks={tasksForPlan} 
+                        onEditTask={handleEditTask}
+                        onDeleteTask={handleDeleteTask}
+                        onToggleStatus={handleToggleTaskStatus}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -414,6 +501,58 @@ export const PartnerDetail: React.FC = () => {
                 className="flex-1 bg-danger hover:bg-red-600 text-white font-bold"
               >
                 Excluir
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Resultado Obrigatório */}
+      {isResultModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-surface w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-gray-50/50">
+              <h3 className="text-lg font-bold text-primary flex items-center gap-2">
+                Conclusão do Plano
+              </h3>
+              <button 
+                onClick={() => setIsResultModalOpen(false)}
+                className="text-text-secondary hover:text-text-primary transition-colors"
+                disabled={isSavingResult}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-text-primary font-medium">
+                Esta é a última task do plano. Antes de concluir, descreva o resultado alcançado:
+              </p>
+              
+              <textarea
+                autoFocus
+                className="w-full p-3 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-primary h-32 resize-none"
+                placeholder="Descreva o que foi conquistado com este plano..."
+                value={resultDescription}
+                onChange={(e) => setResultDescription(e.target.value)}
+                disabled={isSavingResult}
+              />
+            </div>
+            
+            <div className="flex items-center gap-3 p-6 bg-gray-50/50 border-t border-border">
+              <Button 
+                variant="ghost" 
+                onClick={() => setIsResultModalOpen(false)}
+                className="flex-1 font-bold"
+                disabled={isSavingResult}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={handleConfirmResultAndComplete}
+                className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold"
+                disabled={!resultDescription.trim() || isSavingResult}
+              >
+                {isSavingResult ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar'}
               </Button>
             </div>
           </div>
