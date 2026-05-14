@@ -7,7 +7,8 @@ interface ProgressBarProps {
 }
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({ progress, label, className = '' }) => {
-  const clampedProgress = Math.min(100, Math.max(0, progress));
+  const safeProgress = isNaN(progress) ? 0 : progress;
+  const clampedProgress = Math.min(100, Math.max(0, safeProgress));
 
   return (
     <div className={`w-full space-y-1 ${className}`}>

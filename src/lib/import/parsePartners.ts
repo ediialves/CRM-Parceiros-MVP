@@ -6,6 +6,12 @@ export interface ParsePartnersResult {
   errors: string[];
 }
 
+function parseNumber(valor: unknown): number {
+  if (valor === null || valor === undefined || valor === '') return 0;
+  const n = Number(valor);
+  return isNaN(n) ? 0 : n;
+}
+
 function parsePercentual(valor: unknown): number {
   if (valor === null || valor === undefined || valor === '') return 0;
   if (typeof valor === 'string') {
@@ -28,12 +34,12 @@ export const parsePartnersExcel = (file: File): Promise<ParsePartnersResult> => 
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'binary' });
         
-        // 1. Ler exclusivamente a aba de nome "DB segmentado"
-        const sheetName = "DB segmentado";
+        // 1. Ler exclusivamente a aba de nome "DB segmentado micro"
+        const sheetName = "DB segmentado micro";
         const sheet = workbook.Sheets[sheetName];
 
         if (!sheet) {
-          reject(new Error("Aba 'DB segmentado' não encontrada no arquivo."));
+          reject(new Error("Aba 'DB segmentado micro' não encontrada no arquivo."));
           return;
         }
 
@@ -48,12 +54,12 @@ export const parsePartnersExcel = (file: File): Promise<ParsePartnersResult> => 
           const row = rows[i];
           if (!row || row.length === 0) continue;
 
-          // Mapeamento de colunas (índices 0-based conforme solicitado)
-          const fila = row[3]; // coluna D
-          const id = row[4];   // coluna E
+          // Mapeamento de colunas (índices 0-based conforme cabeçalho real da aba "DB segmentado micro")
+          const id = row[4];   // coluna E (accountancy_id)
           const nome = row[5]; // coluna F
+          const fila = row[1]; // coluna B
           
-          // Validamenteções obrigatórias
+          // Validação obrigatória do ID (accountancy_id - Col E)
           if (!id) {
             errors.push(`Linha ${i + 1}: ID (coluna E) vazio. Linha ignorada.`);
             continue;
@@ -64,23 +70,22 @@ export const parsePartnersExcel = (file: File): Promise<ParsePartnersResult> => 
           }
 
           const partner: Partner = {
-            fila: (fila === 'RETENÇÃO' || fila === 'EXPANSÃO' ? fila : 'EXPANSÃO') as 'RETENÇÃO' | 'EXPANSÃO',
             id: String(id),
             nome: String(nome),
             gerente: String(row[6] || ""),
             nivel: String(row[7] || ""),
             perfil_parceiro: String(row[8] || ""),
             perfil_servico: String(row[9] || ""),
-            segmentacao: String(row[10] || ""),
-            faixa_engajamento: String(row[12] || ""),
-            licencas: Number(row[21] || 0),
-            licencas_engajadas: Number(row[22] || 0),
-            estoque: Number(row[23] || 0),
-            penetracao: parsePercentual(row[24]),
-            percentual_engajamento: parsePercentual(row[25]),
-            mrr: Number(row[27] || 0),
-            exportacoes_90d: Number(row[41] || 0),
-            gerente_responsavel_id: "", // Deixar vazio por enquanto conforme solicitado
+            fila: row[1] === 'RETENÇÃO' ? 'RETENÇÃO' : 'EXPANSÃO',
+            licencas: parseNumber(row[24]),
+            licencas_engajadas: parseNumber(row[25]),
+            estoque: parseNumber(row[19]),
+            percentual_engajamento: parsePercentual(row[20]),
+            cnpjs: parseNumber(row[23]),
+            cnpjs_livres: parseNumber(row[22]),
+            contas_potencial: parseNumber(row[18]),
+            ratio: parseNumber(row[17]),
+            plano: String(row[2] || ""),
           };
 
           partners.push(partner);

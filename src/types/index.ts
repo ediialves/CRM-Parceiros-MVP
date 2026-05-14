@@ -19,17 +19,17 @@ export interface Partner {
   nivel: string;                   // coluna H
   perfil_parceiro: string;         // coluna I
   perfil_servico: string;          // coluna J
-  segmentacao: string;             // coluna K
-  fila: 'RETENÇÃO' | 'EXPANSÃO';  // coluna D
-  faixa_engajamento: string;       // coluna M
-  licencas: number;                // coluna V
-  licencas_engajadas: number;      // coluna W
-  estoque: number;                 // coluna X
-  penetracao: number;              // coluna Y
-  percentual_engajamento: number;  // coluna Z
-  mrr: number;                     // coluna AB
-  exportacoes_90d: number;         // coluna AP
-  gerente_id: string;               // ID do gerente para filtro de acesso
+  fila: 'RETENÇÃO' | 'EXPANSÃO';  // coluna B
+  licencas: number;                // coluna Y
+  licencas_engajadas: number;      // coluna Z
+  estoque: number;                 // coluna T
+  percentual_engajamento: number;  // coluna U
+  gerente_id?: string;               // ID do gerente para filtro de acesso (opcional no parser)
+  cnpjs?: number;
+  cnpjs_livres?: number;
+  contas_potencial?: number;
+  ratio?: number;
+  plano?: string;
 }
 
 export interface Plan {

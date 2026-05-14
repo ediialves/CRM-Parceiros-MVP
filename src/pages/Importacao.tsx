@@ -71,34 +71,29 @@ export const Importacao: React.FC = () => {
     
     try {
       if (activeTab === 'partners') {
-        // Mapear dados para o formato do banco conforme solicitado
-        const dataToUpsert = previewData.map(p => ({
+        const partnersToUpsert = previewData.map(p => ({
           accountancy_id: p.id,
           nome: p.nome,
           gerente: p.gerente,
-          gerente_id: null,
           nivel: p.nivel,
           perfil_parceiro: p.perfil_parceiro,
           perfil_servico: p.perfil_servico,
-          segmentacao: p.segmentacao,
           fila: p.fila,
-          faixa_engajamento: p.faixa_engajamento,
           licencas: p.licencas,
           licencas_engajadas: p.licencas_engajadas,
-          estoque: p.estoque,
-          penetracao: p.penetracao,
           percentual_engajamento: p.percentual_engajamento,
-          mrr: p.mrr,
-          exportacoes_90d: p.exportacoes_90d
+          estoque: p.estoque,
+          cnpjs: p.cnpjs,
+          cnpjs_livres: p.cnpjs_livres,
+          contas_potencial: p.contas_potencial,
+          ratio: p.ratio,
+          plano: p.plano,
+          updated_at: new Date().toISOString()
         }));
-
-        const deduplicated = Array.from(
-          new Map(dataToUpsert.map(p => [p.accountancy_id, p])).values()
-        );
 
         const { error: upsertError } = await supabase
           .from('partners')
-          .upsert(deduplicated, { onConflict: 'accountancy_id' });
+          .upsert(partnersToUpsert, { onConflict: 'accountancy_id' });
 
         if (upsertError) throw upsertError;
 
@@ -107,11 +102,11 @@ export const Importacao: React.FC = () => {
           user_id: user?.id,
           filename: currentFileName,
           status: 'sucesso',
-          rows_count: deduplicated.length
+          rows_count: partnersToUpsert.length
         });
 
         setMessage({ 
-          text: `${deduplicated.length} parceiros importados com sucesso`, 
+          text: `${partnersToUpsert.length} parceiros importados com sucesso`, 
           type: 'success' 
         });
 

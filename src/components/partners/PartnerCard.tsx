@@ -42,8 +42,8 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
           <Badge variant={getEngagementVariant(partner.percentual_engajamento)}>
             {partner.percentual_engajamento}%
           </Badge>
-          <Badge variant={partner.fila === 'RETENÇÃO' ? 'danger' : 'success'}>
-            {partner.fila}
+          <Badge variant="primary">
+            {partner.plano || 'N/A'}
           </Badge>
         </div>
       </div>
@@ -51,16 +51,13 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <Badge variant="neutral">{partner.nivel}</Badge>
-          <Badge variant={partner.segmentacao.startsWith('S1') ? 'secondary' : 'neutral'}>
-            {partner.segmentacao}
-          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-1">
-          <div className="flex items-center justify-between text-xs text-text-secondary">
+          <div className="flex flex-col gap-1 text-xs text-text-secondary">
             <span>Gerente: <span className="font-medium text-text-primary">{partner.gerente}</span></span>
+            <span>Perfil: <span className="font-medium text-text-primary">{partner.perfil_parceiro}</span></span>
           </div>
-          <p className="text-[10px] text-text-secondary">{partner.perfil_parceiro} • {partner.perfil_servico}</p>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -73,7 +70,7 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
           <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
             <div 
               className="h-full bg-primary" 
-              style={{ width: `${(partner.licencas_engajadas / partner.licencas) * 100}%` }}
+              style={{ width: `${partner.licencas > 0 ? (partner.licencas_engajadas / partner.licencas) * 100 : 0}%` }}
             />
           </div>
         </div>
