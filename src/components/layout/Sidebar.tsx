@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, FileUp, LayoutDashboard, X } from 'lucide-react';
+import { Users, FileUp, LayoutDashboard, X, BookOpen, FileText, Calendar, Megaphone, BarChart2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -12,8 +12,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { isAdmin } = useAuth();
 
   const navItems = [
+    ...(!isAdmin ? [
+      { label: 'Meu Dashboard', icon: LayoutDashboard, path: '/meu-dashboard' }
+    ] : []),
     { label: 'Parceiros', icon: Users, path: '/dashboard', end: true },
-    ...(isAdmin ? [{ label: 'Importação', icon: FileUp, path: '/importacao' }] : []),
+    { label: 'Performance Gerentes', icon: BarChart2, path: '/performance-gerentes' },
+    { label: 'Campanhas', icon: Megaphone, path: '/campanhas' },
+    { label: 'Playbooks Automáticos', icon: BookOpen, path: '/playbooks-automaticos' },
+    { label: 'Guia do CRM', icon: FileText, path: '/guia-crm' },
+    ...(isAdmin ? [
+      { label: 'Dashboard gerencial', icon: LayoutDashboard, path: '/dashboard-gerencial' },
+      { label: 'Dashboard gerencial V2', icon: LayoutDashboard, path: '/dashboard-gerencial-v2' },
+      { label: 'Analytics de Playbooks', icon: BarChart2, path: '/playbooks-analytics' },
+      { label: 'Forecast semanal', icon: Calendar, path: '/account-planning' },
+      { label: 'Playbook', icon: BookOpen, path: '/playbook' },
+      { label: 'Importação', icon: FileUp, path: '/importacao' }
+    ] : []),
   ];
 
   return (

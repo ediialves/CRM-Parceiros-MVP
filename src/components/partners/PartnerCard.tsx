@@ -3,19 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import { Partner, Plan, Task } from '../../types';
 import { Badge } from '../ui/Badge';
 import { ProgressBar } from '../ui/ProgressBar';
+import { SalesforceLinkButton } from '../ui/SalesforceLinkButton';
 
 interface PartnerCardProps {
   partner: Partner;
-  plan: Plan | undefined;
-  tasks: Task[];
+  activePlans: (Plan & { tasks?: Task[] })[];
+  onRefresh?: () => void;
 }
 
-export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }) => {
+export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, activePlans, onRefresh }) => {
   const navigate = useNavigate();
 
-  // Calcular progresso do plano
-  const planProgress = plan && tasks.length > 0 
-    ? (tasks.filter(t => t.status === 'concluida').length / tasks.length) * 100
+  // Juntar todas as tasks de todos os planos ativos
+  const activePlansTasks = activePlans.flatMap(p => p.tasks ?? []);
+
+  // Calcular progresso consolidado de todos os planos ativos
+  const planProgress = activePlans.length > 0 && activePlansTasks.length > 0 
+    ? (activePlansTasks.filter(t => t.status === 'concluida').length / activePlansTasks.length) * 100
     : 0;
 
   // Cor do engajamento
@@ -36,14 +40,17 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
           <h3 className="font-bold text-lg text-text-primary leading-tight group-hover:text-primary transition-colors truncate">
             {partner.nome}
           </h3>
-          <p className="text-xs text-text-secondary font-mono mt-0.5">{partner.id}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-xs text-text-secondary font-mono">{partner.id}</p>
+            <SalesforceLinkButton salesforceId={partner.salesforce_id} />
+          </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           <Badge variant={getEngagementVariant(partner.percentual_engajamento)}>
             {partner.percentual_engajamento}%
           </Badge>
           <Badge variant="primary">
-            {partner.plano || 'N/A'}
+            {partner.segmento || 'N/A'}
           </Badge>
         </div>
       </div>
@@ -76,12 +83,12 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
         </div>
       </div>
 
-      <div className="pt-3 border-t border-gray-50 mt-auto">
-        {plan ? (
+      <div className="pt-3 border-t border-gray-50 mt-auto flex flex-col gap-3">
+        {activePlans.length > 0 ? (
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-text-secondary italic truncate flex-1">
-                Plano: {plan.titulo}
+              <span className="text-[10px] text-text-secondary italic truncate flex-1" title={activePlans.map(p => p.titulo).join(', ')}>
+                Playbook: {activePlans.map(p => p.titulo).join(', ')}
               </span>
               <span className="text-[10px] font-bold text-primary ml-2">{Math.round(planProgress)}%</span>
             </div>
@@ -90,7 +97,7 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, plan, tasks }
         ) : (
           <div className="flex flex-col gap-1">
             <span className="text-[10px] text-text-secondary border-l-2 border-danger pl-2">
-              Nenhum plano ativo
+              Nenhum playbook ativo
             </span>
             <ProgressBar progress={0} />
           </div>

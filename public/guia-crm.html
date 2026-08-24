@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Guia · Planos no CRM de Parceiros</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ca-blue:#0066FF;--ca-blue-dark:#0047CC;--ca-blue-light:#EBF2FF;
+  --ca-green:#00C853;
+  --bg:#fff;--surface:#F7F9FC;--surface2:#EEF2F8;
+  --border:#E2E8F4;--border2:#CBD5E8;
+  --text:#0D1B2A;--text2:#4A5568;--text3:#8FA3BF;
+  --red:#E53E3E;--red-bg:#FFF5F5;--red-bd:#FED7D7;
+  --amber:#D97706;--amber-bg:#FFFBEB;--amber-bd:#FDE68A;
+  --green:#059669;--green-bg:#ECFDF5;--green-bd:#A7F3D0;
+  --purple:#7C3AED;--purple-bg:#F5F3FF;--purple-bd:#DDD6FE;
+}
+html{font-size:14px;scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:#fff;color:var(--text);line-height:1.6}
+.nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center;padding:0 40px}
+.nav-logo{display:flex;align-items:center;gap:10px;margin-right:48px}
+.nav-mark{width:28px;height:28px;background:var(--ca-blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff}
+.nav-text{font-weight:600;font-size:13px}
+.nav-tabs{display:flex;margin-right:auto}
+.ntab{font-size:12px;font-weight:500;color:var(--text3);padding:0 16px;height:56px;display:flex;align-items:center;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+.ntab:hover{color:var(--text2)}
+.ntab.active{color:var(--ca-blue);border-bottom-color:var(--ca-blue)}
+.main{padding-top:56px}
+.sec{display:none;padding:48px 40px;max-width:1000px;margin:0 auto}
+.sec.active{display:block}
+.pg-tag{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ca-blue);margin-bottom:8px}
+.pg-title{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
+.pg-sub{font-size:14px;color:var(--text2);max-width:600px;line-height:1.7;margin-bottom:40px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:8px}
+.card p{font-size:13px;color:var(--text2);line-height:1.7}
+.divider{height:1px;background:var(--border);margin:32px 0}
+.sec-title{font-size:16px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.sec-sub{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px}
+
+/* concept split */
+.concept-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:32px}
+.cbox{border-radius:12px;padding:22px;border:1px solid var(--border)}
+.cbox-plan{background:var(--ca-blue-light);border-color:#BFD7FF}
+.cbox-sf{background:var(--green-bg);border-color:var(--green-bd)}
+.cbox-act{background:var(--surface2);border-color:var(--border2)}
+.cbox-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.cbox-plan .cbox-tag{color:var(--ca-blue)}
+.cbox-sf .cbox-tag{color:var(--green)}
+.cbox-act .cbox-tag{color:var(--text3)}
+.cbox h4{font-size:14px;font-weight:700;margin-bottom:6px}
+.cbox p{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px}
+.cbox ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.cbox ul li{font-size:12px;color:var(--text2);display:flex;align-items:flex-start;gap:6px;line-height:1.5}
+.cbox ul li::before{content:"";width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.cbox-plan ul li::before{background:var(--ca-blue)}
+.cbox-sf ul li::before{background:var(--green)}
+.cbox-act ul li::before{background:var(--text3)}
+
+/* system label */
+.sys-label{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:5px;white-space:nowrap}
+.sys-crm{background:var(--ca-blue-light);color:var(--ca-blue);border:1px solid #BFD7FF}
+.sys-sf{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+
+/* flow steps */
+.flow{margin-bottom:32px}
+.flow-steps{display:flex;flex-direction:column;gap:0}
+.fstep{display:flex;gap:16px;position:relative}
+.fstep:not(:last-child) .fline{position:absolute;left:19px;top:40px;bottom:-1px;width:2px;background:var(--border)}
+.fnum{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;z-index:1}
+.fnum-before{background:var(--surface2);border:2px solid var(--border2);color:var(--text3)}
+.fnum-create{background:var(--ca-blue);color:#fff;border:2px solid var(--ca-blue-dark)}
+.fnum-after{background:var(--green-bg);border:2px solid var(--green-bd);color:var(--green)}
+.fbody{padding:8px 0 28px}
+.fbody-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px}
+.fnum-before+.fbody .fbody-lbl{color:var(--text3)}
+.fnum-create+.fbody .fbody-lbl{color:var(--ca-blue)}
+.fnum-after+.fbody .fbody-lbl{color:var(--green)}
+.fbody h4{font-size:14px;font-weight:600;margin-bottom:4px}
+.fbody p{font-size:12px;color:var(--text2);line-height:1.6}
+.fbody .tip{margin-top:8px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.5}
+.fbody .tip strong{color:var(--amber)}
+.fbody .tip-sf{margin-top:8px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.5}
+.fbody .tip-sf strong{color:var(--green)}
+
+/* naming table */
+.ntable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:32px}
+.ntable th{padding:10px 12px;text-align:left;font-weight:600;font-size:11px;letter-spacing:.04em}
+.ntable th:first-child{background:var(--red-bg);color:var(--red);border-radius:8px 0 0 0}
+.ntable th:last-child{background:var(--green-bg);color:var(--green);border-radius:0 8px 0 0}
+.ntable td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text2);line-height:1.5}
+.ntable tr:last-child td{border-bottom:none}
+.ntable td:first-child{background:var(--red-bg);border-right:1px solid var(--red-bd)}
+.ntable td:last-child{background:var(--green-bg)}
+
+/* context box */
+.ctx-anatomy{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.ctx-header{background:var(--text);padding:12px 16px}
+.ctx-header-t{font-size:12px;font-weight:600;color:#fff}
+.ctx-header-sub{font-size:11px;color:rgba(255,255,255,.5)}
+.ctx-body{padding:16px}
+.ctx-field{margin-bottom:12px}
+.ctx-field:last-child{margin-bottom:0}
+.ctx-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:4px}
+.ctx-value{font-size:12px;color:var(--text2);line-height:1.6;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.ctx-example{background:var(--ca-blue-light);border:1px solid #BFD7FF;border-radius:10px;padding:16px;margin-bottom:16px}
+.ctx-example-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ca-blue);margin-bottom:6px}
+.ctx-example p{font-size:12px;color:var(--text2);line-height:1.7;font-style:italic}
+
+/* task rules */
+.trules{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+.trule{border-radius:10px;padding:16px;border:1px solid var(--border)}
+.trule-bad{background:var(--red-bg);border-color:var(--red-bd)}
+.trule-good{background:var(--green-bg);border-color:var(--green-bd)}
+.trule-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.trule-bad .trule-lbl{color:var(--red)}
+.trule-good .trule-lbl{color:var(--green)}
+.trule ul{list-style:none;display:flex;flex-direction:column;gap:6px}
+.trule ul li{font-size:12px;color:var(--text2);display:flex;align-items:flex-start;gap:6px;line-height:1.5}
+.trule ul li span.icon{flex-shrink:0;font-size:11px}
+
+/* example plan */
+.eplan{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.eplan-hdr{background:var(--ca-blue);padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
+.eplan-name{font-size:13px;font-weight:700;color:#fff}
+.eplan-badge{font-size:10px;font-weight:600;background:rgba(255,255,255,.2);color:#fff;padding:2px 8px;border-radius:4px}
+.eplan-ctx{padding:12px 18px;background:var(--ca-blue-light);border-bottom:1px solid #BFD7FF;font-size:11px;color:var(--text2);line-height:1.6}
+.eplan-ctx strong{color:var(--ca-blue)}
+.eplan-section{padding:8px 18px 4px;background:var(--surface);border-bottom:1px solid var(--border)}
+.eplan-section-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)}
+.eplan-tasks{padding:0}
+.etask{display:flex;align-items:flex-start;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border)}
+.etask:last-child{border-bottom:none}
+.etch{width:16px;height:16px;border:2px solid var(--border2);border-radius:4px;flex-shrink:0;margin-top:2px}
+.etask-body{flex:1}
+.etask-name{font-size:12px;font-weight:500;color:var(--text);margin-bottom:2px}
+.etask-meta{display:flex;gap:8px;align-items:center}
+.etask-resp{font-size:10px;color:var(--ca-blue);font-weight:600}
+.etask-owner-us{background:var(--ca-blue-light);border:1px solid #BFD7FF;border-radius:4px;padding:1px 6px;font-size:10px;color:var(--ca-blue);font-weight:600;flex-shrink:0;margin-left:auto;margin-top:1px}
+.etask-owner-shared{background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--amber);font-weight:600;flex-shrink:0;margin-left:auto;margin-top:1px}
+.eact{display:flex;align-items:flex-start;gap:12px;padding:10px 18px;border-bottom:1px solid var(--border);background:#fff}
+.eact:last-child{border-bottom:none}
+.eact-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.eact-body{flex:1}
+.eact-name{font-size:12px;color:var(--text2);line-height:1.5}
+.eact-sys{font-size:10px;font-weight:600;color:var(--text3);margin-top:2px}
+
+/* diff table */
+.dtable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:32px}
+.dtable th{padding:10px 14px;text-align:left;background:var(--text);color:#fff;font-weight:500;font-size:11px}
+.dtable th:first-child{border-radius:8px 0 0 0}
+.dtable th:last-child{border-radius:0 8px 0 0}
+.dtable td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text2);line-height:1.5;font-size:12px}
+.dtable tr:last-child td{border-bottom:none}
+.dtable td:first-child{font-weight:600;color:var(--text)}
+.dtable tr:nth-child(even) td{background:var(--surface)}
+.badge-plan{background:var(--ca-blue-light);color:var(--ca-blue);font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;display:inline-block}
+.badge-sf{background:var(--green-bg);color:var(--green);font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;display:inline-block}
+.badge-ctx{background:var(--amber-bg);color:var(--amber);font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;display:inline-block}
+.badge-stack{display:flex;flex-direction:column;gap:4px}
+
+/* ownership block */
+.owngrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
+.ownbox{border-radius:12px;padding:20px;border:1px solid var(--border)}
+.ownbox-us{background:var(--ca-blue-light);border-color:#BFD7FF}
+.ownbox-shared{background:var(--amber-bg);border-color:var(--amber-bd)}
+.ownbox-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.ownbox-us .ownbox-tag{color:var(--ca-blue)}
+.ownbox-shared .ownbox-tag{color:var(--amber)}
+.ownbox h4{font-size:14px;font-weight:700;margin-bottom:10px}
+.ownbox ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.ownbox ul li{font-size:12px;color:var(--text2);display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+.ownbox ul li .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.ownbox-us ul li .dot{background:var(--ca-blue)}
+.ownbox-shared ul li .dot{background:var(--amber)}
+
+/* alert box */
+.alert{border-radius:10px;padding:16px;margin-bottom:16px;display:flex;gap:12px;align-items:flex-start}
+.alert-warn{background:var(--amber-bg);border:1px solid var(--amber-bd)}
+.alert-info{background:var(--ca-blue-light);border:1px solid #BFD7FF}
+.alert-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.alert-body{flex:1}
+.alert-title{font-size:12px;font-weight:700;margin-bottom:3px}
+.alert-warn .alert-title{color:var(--amber)}
+.alert-info .alert-title{color:var(--ca-blue)}
+.alert-body p{font-size:12px;color:var(--text2);line-height:1.6}
+
+/* ── FORECAST X PLANO (ENCAPSULATED STYLES) ── */
+.fc-tab {
+  --space-xs: 8px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 40px;
+  --space-xl: 56px;
+  --space-2xl: 80px;
+  --content-width: 1040px;
+  --page-pad: 48px;
+}
+.fc-tab .hero-wrap { background: #fff; border-bottom: 1px solid var(--border); margin: -48px -40px 48px -40px; }
+.fc-tab .hero { max-width: var(--content-width); margin: 0 auto; padding: var(--space-xl) var(--page-pad) var(--space-lg); }
+.fc-tab .hero-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ca-blue); margin-bottom: var(--space-xs); }
+.fc-tab .hero-title { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1.15; color: var(--text); margin-bottom: var(--space-sm); max-width: 560px; }
+.fc-tab .hero-title span { color: var(--ca-blue); }
+.fc-tab .hero-desc { font-size: 14px; color: var(--text2); max-width: 520px; line-height: 1.8; }
+.fc-tab .page { max-width: var(--content-width); margin: 0 auto; padding: 0; }
+.fc-tab .sec-header { margin-bottom: var(--space-md); }
+.fc-tab .sec-label { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+.fc-tab .sec-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; color: var(--text); margin-bottom: 6px; }
+.fc-tab .sec-desc { font-size: 13px; color: var(--text2); line-height: 1.75; max-width: 560px; }
+.fc-tab .divider { height: 1px; background: var(--border); margin: var(--space-lg) 0; }
+.fc-tab .concept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+.fc-tab .concept-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: var(--space-md); position: relative; }
+.fc-tab .concept-card.card-blue { border-top: 3px solid var(--ca-blue); }
+.fc-tab .concept-card.card-green { border-top: 3px solid var(--green); }
+.fc-tab .cc-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: var(--space-sm); }
+.fc-tab .card-blue .cc-icon { background: var(--ca-blue-light); }
+.fc-tab .card-green .cc-icon { background: var(--green-bg); }
+.fc-tab .cc-type { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
+.fc-tab .card-blue .cc-type { color: var(--ca-blue); }
+.fc-tab .card-green .cc-type { color: var(--green); }
+.fc-tab .cc-name { font-size: 18px; font-weight: 700; letter-spacing: -.02em; margin-bottom: var(--space-xs); color: var(--text); }
+.fc-tab .cc-question { font-size: 12px; font-weight: 600; color: var(--text3); background: var(--surface); border-radius: 8px; padding: var(--space-xs) 12px; margin-bottom: var(--space-sm); border-left: 2px solid var(--border2); }
+.fc-tab .card-blue .cc-question { border-left-color: var(--ca-blue); }
+.fc-tab .card-green .cc-question { border-left-color: var(--green); }
+.fc-tab .cc-desc { font-size: 13px; color: var(--text2); line-height: 1.75; }
+.fc-tab .commit-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+.fc-tab .commit-card { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: var(--space-md); }
+.fc-tab .commit-icon { font-size: 22px; margin-bottom: var(--space-xs); }
+.fc-tab .commit-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.fc-tab .commit-desc { font-size: 12px; color: var(--text2); line-height: 1.65; }
+.fc-tab .commit-example { margin-top: var(--space-sm); font-size: 11px; color: var(--text3); background: var(--surface); padding: var(--space-xs) 10px; border-radius: 8px; line-height: 1.5; border-left: 2px solid var(--border2); }
+.fc-tab .anatomy-box { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: var(--space-md); margin-bottom: var(--space-lg); }
+.fc-tab .anatomy-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: var(--space-sm); }
+.fc-tab .anatomy-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-xs); margin-bottom: var(--space-sm); }
+.fc-tab .af { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.fc-tab .af-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); margin-bottom: 4px; }
+.fc-tab .af-value { font-size: 13px; font-weight: 600; color: var(--text); }
+.fc-tab .af-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.fc-tab .commit-pill { display: inline-flex; align-items: center; gap: var(--space-xs); background: var(--ca-blue-light); border: 1px solid var(--ca-blue-mid); border-radius: 10px; padding: 12px var(--space-sm); }
+.fc-tab .commit-pill-dot { width: 8px; height: 8px; background: var(--ca-blue); border-radius: 50%; flex-shrink: 0; }
+.fc-tab .commit-pill-text { font-size: 12px; font-weight: 600; color: var(--ca-blue); }
+.fc-tab .example-wrap { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: var(--space-lg); }
+.fc-tab .example-header { background: var(--text); padding: var(--space-sm) 28px; display: flex; align-items: center; gap: var(--space-sm); }
+.fc-tab .example-header-icon { font-size: 18px; }
+.fc-tab .example-header-text { font-size: 13px; font-weight: 600; color: #fff; }
+.fc-tab .example-header-sub { font-size: 11px; color: #8FA3BF; margin-top: 2px; }
+.fc-tab .example-body { padding: var(--space-md) 28px; }
+.fc-tab .partner-meta { display: flex; gap: var(--space-xs); margin-bottom: var(--space-md); flex-wrap: wrap; }
+.fc-tab .pm-pill { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+.fc-tab .pm-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text3); }
+.fc-tab .pm-value { font-size: 12px; font-weight: 600; color: var(--text); }
+.fc-tab .tl-section-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: var(--space-sm); }
+.fc-tab .timeline { position: relative; padding-left: 28px; }
+.fc-tab .timeline::before { content: ''; position: absolute; left: 9px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+.fc-tab .tl-item { position: relative; margin-bottom: var(--space-sm); }
+.fc-tab .tl-item:last-child { margin-bottom: 0; }
+.fc-tab .tl-dot { position: absolute; left: -28px; top: 10px; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; z-index: 1; }
+.fc-tab .tl-dot.blue { background: var(--ca-blue); }
+.fc-tab .tl-dot.amber { background: var(--amber); }
+.fc-tab .tl-dot.highlight { background: var(--purple); box-shadow: 0 0 0 3px var(--purple-bd); }
+.fc-tab .tl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.fc-tab .tl-card.highlighted { background: var(--purple-bg); border-color: var(--purple-bd); }
+.fc-tab .tl-top { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: 4px; flex-wrap: wrap; }
+.fc-tab .tl-date { font-size: 11px; font-weight: 600; color: var(--text3); }
+.fc-tab .tl-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.fc-tab .tl-card.highlighted .tl-title { color: var(--purple); }
+.fc-tab .tl-body { font-size: 12px; color: var(--text2); line-height: 1.5; margin-top: 2px; }
+.fc-tab .tl-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: auto; white-space: nowrap; }
+.fc-tab .badge-task { background: var(--ca-blue-light); color: var(--ca-blue); }
+.fc-tab .badge-commit { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-bd); }
+.fc-tab .arrow-connector { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); background: var(--purple-bg); border: 1px dashed var(--purple-bd); border-radius: 10px; padding: 12px var(--space-sm); margin: var(--space-sm) 0; }
+.fc-tab .arrow-connector-text { font-size: 12px; font-weight: 600; color: var(--purple); }
+.fc-tab .forecast-block { background: var(--purple-bg); border: 1px solid var(--purple-bd); border-radius: 12px; padding: var(--space-sm) var(--space-md); margin-top: var(--space-sm); }
+.fc-tab .forecast-block-label { font-size: 10px; font-weight: 700; color: var(--purple); text-transform: uppercase; letter-spacing: .08em; margin-bottom: var(--space-sm); }
+.fc-tab .forecast-row { display: flex; align-items: center; gap: var(--space-sm); background: #fff; border: 1px solid var(--purple-bd); border-radius: 8px; padding: 12px 14px; }
+.fc-tab .forecast-dot { width: 8px; height: 8px; background: var(--purple); border-radius: 50%; flex-shrink: 0; }
+.fc-tab .forecast-row-main { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.fc-tab .forecast-row-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.fc-tab .flow-wrap { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: var(--space-md); margin-bottom: var(--space-md); }
+.fc-tab .flow-boxes { display: flex; align-items: stretch; gap: 0; }
+.fc-tab .flow-box { flex: 1; }
+.fc-tab .fb-inner { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-sm) 14px; text-align: center; height: 100%; }
+.fc-tab .fb-inner.blue { background: var(--ca-blue-light); border-color: var(--ca-blue-mid); }
+.fc-tab .fb-inner.purple { background: var(--purple-bg); border-color: var(--purple-bd); }
+.fc-tab .fb-inner.green { background: var(--green-bg); border-color: var(--green-bd); }
+.fc-tab .fb-icon { font-size: 20px; margin-bottom: var(--space-xs); }
+.fc-tab .fb-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.fc-tab .fb-inner.blue .fb-title { color: var(--ca-blue); }
+.fc-tab .fb-inner.purple .fb-title { color: var(--purple); }
+.fc-tab .fb-inner.green .fb-title { color: var(--green); }
+.fc-tab .fb-sub { font-size: 11px; color: var(--text2); line-height: 1.4; }
+.fc-tab .flow-arrow { font-size: 18px; color: var(--text3); padding: 0 var(--space-xs); display: flex; align-items: center; flex-shrink: 0; }
+.fc-tab .flow-note { font-size: 11px; color: var(--text3); text-align: center; margin-top: var(--space-sm); font-style: italic; }
+.fc-tab .or-pill { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; font-size: 10px; font-weight: 700; color: var(--text3); padding: 3px 10px; text-align: center; display: block; margin: var(--space-xs) auto; width: fit-content; }
+.fc-tab .rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+.fc-tab .rule-card { border-radius: 12px; padding: var(--space-sm); }
+.fc-tab .rule-card.yes { background: var(--green-bg); border: 1px solid var(--green-bd); }
+.fc-tab .rule-card.no { background: var(--red-bg); border: 1px solid var(--red-bd); }
+.fc-tab .rule-icon { font-size: 18px; margin-bottom: var(--space-xs); }
+.fc-tab .rule-title { font-size: 13px; font-weight: 700; margin-bottom: var(--space-xs); }
+.fc-tab .rule-card.yes .rule-title { color: var(--green); }
+.fc-tab .rule-card.no .rule-title { color: var(--red); }
+.fc-tab .rule-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.fc-tab .rule-list li { font-size: 12px; color: var(--text2); display: flex; gap: var(--space-xs); align-items: flex-start; line-height: 1.5; }
+.fc-tab .rule-list li::before { content: ''; margin-top: 5px; flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; }
+.fc-tab .rule-card.yes .rule-list li::before { background: var(--green); }
+.fc-tab .rule-card.no .rule-list li::before { background: var(--red); }
+.fc-tab .commit-table-wrap { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: var(--space-lg); }
+.fc-tab .commit-table-header { background: var(--text); display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.fc-tab .cth { padding: 14px var(--space-md); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.fc-tab .cth.valid { color: #6EE7B7; }
+.fc-tab .cth.invalid { color: #FCA5A5; border-left: 1px solid rgba(255,255,255,.1); }
+.fc-tab .commit-table-body { display: grid; grid-template-columns: 1fr 1fr; }
+.fc-tab .ct-col { display: flex; flex-direction: column; }
+.fc-tab .ct-col.invalid { border-left: 1px solid var(--border); }
+.fc-tab .ct-row { padding: 12px var(--space-md); border-bottom: 1px solid var(--border); display: flex; gap: var(--space-xs); align-items: flex-start; }
+.fc-tab .ct-col:last-child .ct-row { border-left: none; }
+.fc-tab .ct-row:last-child { border-bottom: none; }
+.fc-tab .ct-row:nth-child(even) { background: var(--surface); }
+.fc-tab .ct-bullet { margin-top: 4px; flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; }
+.fc-tab .ct-col.valid .ct-bullet { background: var(--green); }
+.fc-tab .ct-col.invalid .ct-bullet { background: var(--red); }
+.fc-tab .ct-text { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.fc-tab .ct-text strong { font-weight: 600; display: block; color: var(--text); margin-bottom: 2px; }
+.fc-tab .alert { display: flex; gap: var(--space-sm); background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: 12px; padding: var(--space-sm) var(--space-md); align-items: flex-start; }
+.fc-tab .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.fc-tab .alert-text { font-size: 12px; color: var(--text2); line-height: 1.65; }
+.fc-tab .alert-text strong { color: var(--amber); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <div class="nav-mark">CA</div>
+    <span class="nav-text">Parceiros · Guia de Planos</span>
+  </div>
+  <div class="nav-tabs">
+    <div class="ntab active" onclick="showSec('forecast',this)">Forecast x Plano</div>
+    <div class="ntab" onclick="showSec('conceito',this)">Conceito</div>
+    <div class="ntab" onclick="showSec('fluxo',this)">Fluxo de Criação</div>
+    <div class="ntab" onclick="showSec('nomenclatura',this)">Nome & Tarefas</div>
+    <div class="ntab" onclick="showSec('contexto',this)">Contexto</div>
+    <div class="ntab" onclick="showSec('diferenca',this)">Plano vs Atividade</div>
+    <div class="ntab" onclick="showSec('responsabilidade',this)">Responsabilidade</div>
+  </div>
+</nav>
+
+<div class="main">
+
+<!-- FORECAST X PLANO -->
+<div id="sec-forecast" class="sec active fc-tab">
+  <div class="hero-wrap">
+    <div class="hero">
+      <div class="hero-eyebrow">Guia Operacional · Gestão de Parceiros</div>
+      <h1 class="hero-title">Plano de Ação<br><span>e Forecast</span></h1>
+      <p class="hero-desc">Duas ferramentas distintas que trabalham juntas. Este guia explica o que é cada uma, como se conectam e como usá-las no dia a dia da gestão de parceiros.</p>
+    </div>
+  </div>
+
+  <div class="page">
+    <!-- 01: CONCEITOS -->
+    <div class="sec-header">
+      <div class="sec-label">01 · Conceitos</div>
+      <div class="sec-title">O que é cada ferramenta?</div>
+      <div class="sec-desc">Cada ferramenta responde a uma pergunta diferente. Entender essa diferença é o ponto de partida.</div>
+    </div>
+
+    <div class="concept-grid">
+      <div class="concept-card card-blue">
+        <div class="cc-icon">📋</div>
+        <div class="cc-type">Estrutural · Médio prazo</div>
+        <div class="cc-name">Plano de Ação</div>
+        <div class="cc-question">❝ O que vamos fazer com esse parceiro? ❞</div>
+        <div class="cc-desc">
+          É um projeto estruturado para resolver um problema ou capturar uma oportunidade específica de um parceiro. Ele tem tarefas organizadas ao longo do tempo, cada uma com data e responsável.
+          <br><br>
+          Não tem prazo semanal. É um mapa do que precisa acontecer para mover esse parceiro de um estado para outro.
+        </div>
+      </div>
+
+      <div class="concept-card card-green">
+        <div class="cc-icon">📅</div>
+        <div class="cc-type">Operacional · Semanal</div>
+        <div class="cc-name">Forecast</div>
+        <div class="cc-question">❝ O que vai acontecer essa semana? ❞</div>
+        <div class="cc-desc">
+          É a previsão de resultados da semana. O gerente registra os commits, ou seja, as ações concretas que ele acredita que vão gerar um resultado dentro daquele período.
+          <br><br>
+          Só entra no forecast o que tem expectativa real de fechar naquela semana. A soma de todos os commits forma o forecast.
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 02: COMMITS -->
+    <div class="sec-header">
+      <div class="sec-label">02 · Tipos de Commit</div>
+      <div class="sec-title">O que é um commit?</div>
+      <div class="sec-desc">Um commit é uma ação com expectativa de resultado naquela semana. Existem três tipos.</div>
+    </div>
+
+    <div class="commit-row">
+      <div class="commit-card" style="border-top:3px solid var(--ca-blue)">
+        <div class="commit-icon">💰</div>
+        <div class="commit-title">Commit de Venda</div>
+        <div class="commit-desc">Uma venda que o gerente acredita que vai fechar nessa semana. Pode ser uma nova licença, plano de automação ou BPO Financeiro.</div>
+        <div class="commit-example">Ex: Parceiro 003 — Apresentar plano Automação — Meta: venda — 5 licenças</div>
+      </div>
+      <div class="commit-card" style="border-top:3px solid var(--green)">
+        <div class="commit-icon">⚡</div>
+        <div class="commit-title">Commit de Engajamento</div>
+        <div class="commit-desc">Uma ação que vai mover licenças do parceiro de não atribuídas, não engajadas para atribuída ou engajada.</div>
+        <div class="commit-example">Ex: Parceiro 001 — Workshop financeiro — Meta: engajar — 20 licenças</div>
+      </div>
+      <div class="commit-card" style="border-top:3px solid var(--amber)">
+        <div class="commit-icon">🔗</div>
+        <div class="commit-title">Commit de Atribuição</div>
+        <div class="commit-desc">Uma ação para atribuir licenças em estoque sem cliente para um novo cliente. Resolve o problema de licenças pagas sem um "dono".</div>
+        <div class="commit-example">Ex: Parceiro 001 — Atribuir licenças — Meta: atribuir — 30 licenças</div>
+      </div>
+    </div>
+
+    <div class="anatomy-box">
+      <div class="anatomy-title">📐 Anatomia de um Commit</div>
+      <div class="anatomy-fields">
+        <div class="af">
+          <div class="af-label">Parceiro</div>
+          <div class="af-value">001</div>
+          <div class="af-sub">Identificação do parceiro</div>
+        </div>
+        <div class="af">
+          <div class="af-label">Ação</div>
+          <div class="af-value">Workshop de engajamento</div>
+          <div class="af-sub">O que vai acontecer</div>
+        </div>
+        <div class="af">
+          <div class="af-label">Data</div>
+          <div class="af-value">20/05</div>
+          <div class="af-sub">Dentro da semana</div>
+        </div>
+        <div class="af">
+          <div class="af-label">Meta · Qtd</div>
+          <div class="af-value">Engajar · 20</div>
+          <div class="af-sub">Tipo + volume esperado</div>
+        </div>
+      </div>
+      <div class="commit-pill">
+        <div class="commit-pill-dot"></div>
+        <div class="commit-pill-text">Parceiro 001 · Workshop de engajamento · 20/05 · Meta: engajar · Quantidade: 20</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 03: CONEXÃO -->
+    <div class="sec-header">
+      <div class="sec-label">03 · Como se conectam</div>
+      <div class="sec-title">De task a commit</div>
+      <div class="sec-desc">Uma task do Plano de Ação pode virar um commit no Forecast da semana em que ela vai acontecer. Veja o exemplo completo.</div>
+    </div>
+
+    <div class="example-wrap">
+      <div class="example-header">
+        <div class="example-header-icon">🏢</div>
+        <div>
+          <div class="example-header-text">Parceiro 001 · Plano de Retenção</div>
+          <div class="example-header-sub">Situação: 60 contas em estoque · 30 não atribuídas</div>
+        </div>
+      </div>
+      <div class="example-body">
+        <div class="partner-meta">
+          <div class="pm-pill"><span class="pm-label">Estoque</span><span class="pm-value">60 contas</span></div>
+          <div class="pm-pill"><span class="pm-label">Não atribuídas</span><span class="pm-value">30</span></div>
+          <div class="pm-pill"><span class="pm-label">Plano</span><span class="pm-value">Retenção</span></div>
+        </div>
+
+        <div class="tl-section-label">Plano de Ação</div>
+
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-dot blue">1</div>
+            <div class="tl-card">
+              <div class="tl-top">
+                <span class="tl-date">01/05 · Sexta</span>
+                <span class="tl-badge badge-task">Task</span>
+              </div>
+              <div class="tl-title">Apresentar diagnóstico ao parceiro</div>
+              <div class="tl-body">Reunião para mostrar o cenário atual: licenças em estoque, taxa de engajamento e risco de churn.</div>
+            </div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot amber">2</div>
+            <div class="tl-card">
+              <div class="tl-top">
+                <span class="tl-date">07/05 · Quarta</span>
+                <span class="tl-badge badge-task">Task</span>
+              </div>
+              <div class="tl-title">Atribuir licenças sem uso para outros clientes</div>
+              <div class="tl-body">Trabalhar com o parceiro para identificar clientes ainda não encarteirados e fazer a atribuição das 30 licenças paradas.</div>
+            </div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot highlight">3</div>
+            <div class="tl-card highlighted">
+              <div class="tl-top">
+                <span class="tl-date">20/05 · Terça</span>
+                <span class="tl-badge badge-task">Task</span>
+                <span class="tl-badge badge-commit" style="margin-left:4px">→ Pode virar Commit</span>
+              </div>
+              <div class="tl-title">Workshop de engajamento · Gestão Financeira</div>
+              <div class="tl-body">Treinamento prático para os clientes do parceiro aprenderem a usar o módulo financeiro. Meta: 20 clientes engajados.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow-connector" style="margin-top:var(--space-md)">
+          <span style="font-size:16px">📋</span>
+          <span class="arrow-connector-text">A Task 3 acontece na semana de 19/05 → Pode virar um commit no Forecast daquela semana</span>
+          <span style="font-size:16px">📅</span>
+        </div>
+
+        <div class="tl-section-label" style="margin-top:var(--space-md)">Forecast · Semana de 19/05</div>
+
+        <div class="forecast-block">
+          <div class="forecast-block-label">Commits da semana</div>
+          <div class="forecast-row">
+            <div class="forecast-dot"></div>
+            <div style="flex:1">
+              <div class="forecast-row-main">Parceiro 001 · Workshop de engajamento · 20/05</div>
+              <div class="forecast-row-sub">Meta: engajar · Quantidade: 20 clientes</div>
+            </div>
+            <span class="tl-badge badge-commit">Commit de Engajamento</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 04: REGRAS -->
+    <div class="sec-header">
+      <div class="sec-label">04 · Regra importante</div>
+      <div class="sec-title">Com ou sem Plano de Ação?</div>
+      <div class="sec-desc">Um commit pode existir com ou sem um Plano de Ação vinculado. Os dois caminhos são válidos.</div>
+    </div>
+
+    <div class="flow-wrap">
+      <div class="flow-boxes">
+        <div class="flow-box">
+          <div class="fb-inner blue">
+            <div class="fb-icon">🏢</div>
+            <div class="fb-title">Parceiro</div>
+            <div class="fb-sub">Qualquer parceiro da carteira</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">
+          <div style="text-align:center">
+            <div class="fb-inner blue" style="height:auto;margin-bottom:var(--space-xs)">
+              <div class="fb-icon">📋</div>
+              <div class="fb-title">Com Plano de Ação</div>
+              <div class="fb-sub">Task do plano cai nessa semana</div>
+            </div>
+            <div class="or-pill">OU</div>
+            <div class="fb-inner" style="height:auto">
+              <div class="fb-icon">💡</div>
+              <div class="fb-title">Sem Plano de Ação</div>
+              <div class="fb-sub">Oportunidade ou ação pontual</div>
+            </div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">
+          <div class="fb-inner purple">
+            <div class="fb-icon">📅</div>
+            <div class="fb-title">Commit no Forecast</div>
+            <div class="fb-sub">Entra na previsão da semana</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">
+          <div class="fb-inner green">
+            <div class="fb-icon">✅</div>
+            <div class="fb-title">Resultado</div>
+            <div class="fb-sub">Venda, engajamento ou atribuição</div>
+          </div>
+        </div>
+      </div>
+      <div class="flow-note">Todo commit gera um resultado esperado. A soma de todos os commits = forecast da semana.</div>
+    </div>
+
+    <div class="rule-grid">
+      <div class="rule-card yes">
+        <div class="rule-icon">✅</div>
+        <div class="rule-title">Entra no Forecast</div>
+        <ul class="rule-list">
+          <li>Task com possibilidade de gerar resultado real dentro da semana do forecast planejado</li>
+          <li>Ação pontual com parceiro que tem chance real de fechar</li>
+          <li>Ação sem plano formal, mas com resultado esperado nessa semana</li>
+          <li>Qualquer commit com data dentro do período</li>
+        </ul>
+      </div>
+      <div class="rule-card no">
+        <div class="rule-icon">🚫</div>
+        <div class="rule-title">Não entra no Forecast</div>
+        <ul class="rule-list">
+          <li>Tasks de planos com data em semanas futures</li>
+          <li>Ações sem expectativa real de resultado nessa semana</li>
+          <li>Atividades de planejamento ou reuniões internas</li>
+          <li>Tasks cuja execução depende de outra task não concluída</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 05: TABELA DE COMMITS -->
+    <div class="sec-header">
+      <div class="sec-label">05 · Referência de campo</div>
+      <div class="sec-title">Commits válidos e inválidos</div>
+      <div class="sec-desc">Exemplos reais extraídos da base de commits da equipe. Use como referência na hora de registrar seu forecast.</div>
+    </div>
+
+    <div class="commit-table-wrap">
+      <div class="commit-table-header">
+        <div class="cth valid">✅ Commit válido</div>
+        <div class="cth invalid">🚫 Commit inválido</div>
+      </div>
+      <div class="commit-table-body">
+        <div class="ct-col valid">
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Substituir 3 licenças · Atribuição</strong>Substituir 3 licenças que não estavam em uso para novos clientes. Ação com data e resultado definido.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Reverter cancelamento de 10 licenças · Engajamento</strong>Reunião agendada para o dia seguinte com proposta de migração para plano de automação contábil como alternativa.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Trocar 3 licenças desengajadas por 20 de automação · Substituição</strong>Substituir licenças paradas por licenças de automação contábil. Meta numérica clara: 20 licenças.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Adicionar 3 licenças para 3 novos clientes · Venda</strong>Parceiro adicionou 3 novas licenças para 3 novos clientes. Resultado confirmado: 3.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Workshop presencial BPO + CA Pro · Engajamento</strong>Evento presencial para vender serviço de BPO. 12 licenças sem uso. Meta definida para a semana.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Substituir licenças paradas e atribuir a novos clientes · Substituição</strong>Ação de revisão de carteira com objetivo claro de atribuição. 2 licenças. Executando na semana.</div>
+          </div>
+        </div>
+
+        <div class="ct-col invalid">
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Entender o cenário atual da parceira mediante licenças desengajadas · Engajamento</strong>Diagnóstico não é commit. Não gera resultado de engajamento, venda ou atribuição diretamente.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Reunião de mapeamento de carteira · Engajamento</strong>Mapeamento é etapa de planejamento, não um commit de resultado. Não pertence ao forecast.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Agendar reunião para falar sobre licenças desengajadas · Engajamento</strong>Agendar reunião não é um resultado. É uma ação intermediária. O commit seria a reunião em si.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Ativar projeto de crescimento conforme já traçado · Venda</strong>Sem definição de ação concreta para a semana. "Conforme já traçado" não especifica o que vai acontecer agora.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Parceiro longe da parceria há muito tempo, propus piloto · Venda</strong>Parceiro sinalizou que só fala na 2ª semana de junho. Não há expectativa real de fechamento nessa semana.</div>
+          </div>
+          <div class="ct-row">
+            <div class="ct-bullet"></div>
+            <div class="ct-text"><strong>Vamos iniciar novo projeto para crescimento de carteira · Engajamento</strong>Sem ação definida, sem data, sem meta. É intenção, não commit. Status: Backlog.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert">
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-text">
+        <strong>Ponto de atenção:</strong> Todo parceiro com Plano de Ação ativo deve ter suas tasks da semana refletidas no Forecast. Se uma task está no plano mas não aparece no forecast da semana em que acontece, ela corre risco de não ser executada ou monitorada.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONCEITO -->
+<div id="sec-conceito" class="sec">
+  <div class="pg-tag">01 · Base</div>
+  <div class="pg-title">Plano é um projeto, não um log de atividades</div>
+  <div class="pg-sub">Temos três lugares distintos no CRM para registrar informações. Misturá-los quebra a visibilidade da gestão e dificulta o acompanhamento do time.</div>
+
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-body">
+      <div class="alert-title">Erro mais comum do time</div>
+      <p>Usar as tarefas do plano como checklist de atividades feitas — "Fiz diagnóstico", "Liguei pro parceiro", "Follow-up". Isso não é tarefa de plano. O lugar certo para isso é a <strong>atividade no Salesforce</strong>.</p>
+    </div>
+  </div>
+
+  <div class="concept-grid">
+    <div class="cbox cbox-plan">
+      <div class="cbox-tag">📋 CRM Parceiros · Plano</div>
+      <h4>O projeto de evolução do parceiro</h4>
+      <p>Descreve o objetivo e os passos concretos para evoluir o parceiro. Criado após entender o contexto, antes de começar a executar. <strong>Não tem prazo de finalização do plano</strong> — o prazo fica nas tarefas individuais.</p>
+      <ul>
+        <li>Nome com tipo de plano + objetivo</li>
+        <li>Contexto preenchido na criação</li>
+        <li>Tarefas que geram resultado</li>
+        <li>Responsável por tarefa</li>
+      </ul>
+    </div>
+    <div class="cbox cbox-sf">
+      <div class="cbox-tag">✅ Salesforce · Tarefas</div>
+      <h4>Produtividade e execução do time</h4>
+      <p>Gestão de produtividade das tarefas do gerente. É onde cada tarefa do plano ganha vida operacional, com acompanhamento individual de execução.</p>
+      <ul>
+        <li>Tarefas derivadas dos planos</li>
+        <li>Acompanhamento de prazo e status</li>
+        <li>Visibilidade de produtividade do gerente</li>
+        <li>Não substitui o plano no CRM Parceiros</li>
+      </ul>
+    </div>
+    <div class="cbox cbox-act">
+      <div class="cbox-tag">📝 Salesforce · Atividades</div>
+      <h4>Histórico de interações com o parceiro</h4>
+      <p>Registra o que aconteceu no relacionamento: ligações, reuniões, acordos, objeções. É o diário de bordo do parceiro — não o projeto.</p>
+      <ul>
+        <li>Reuniões e ligações realizadas</li>
+        <li>Próximo contato agendado</li>
+        <li>Resultado de cada interação</li>
+        <li>Notas de diagnóstico relevantes</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    <span class="alert-icon">💡</span>
+    <div class="alert-body">
+      <div class="alert-title">A regra simples</div>
+      <p><strong>Plano (CRM Parceiros):</strong> "R1 - Ativar 20 licenças desengajadas - Picolli" &nbsp;·&nbsp; <strong>Atividade (Salesforce):</strong> "Reunião de diagnóstico — parceiro tem objeção de custo, usa Mister Contador para 271 CNPJs." &nbsp;·&nbsp; <strong>Contexto do Plano:</strong> situação atual do parceiro e motivo do plano.</p>
+    </div>
+  </div>
+</div>
+
+<!-- FLUXO -->
+<div id="sec-fluxo" class="sec">
+  <div class="pg-tag">02 · Processo</div>
+  <div class="pg-title">Fluxo correto de criação de um plano</div>
+  <div class="pg-sub">O plano nasce depois do diagnóstico e antes da execução. Não é criado no final para documentar o que já aconteceu.</div>
+
+  <div class="flow">
+    <div class="flow-steps">
+
+      <div class="fstep">
+        <div class="fline"></div>
+        <div class="fnum fnum-before">1</div>
+        <div class="fbody">
+          <div class="fbody-lbl">Antes do plano · Diagnóstico</div>
+          <h4>Entender o contexto do parceiro</h4>
+          <p>Levante os dados antes de criar qualquer plano: quantas licenças, quantas engajadas, perfil de serviço (contábil, BPO, híbrido), qual sistema usa hoje, quais as barreiras. O diagnóstico não precisa ser uma reunião formal — pode ser via WhatsApp, uma ligação rápida ou análise dos dados do CRM. O importante é ter o contexto claro. <strong>Se o contexto já estiver disponível, pule para o passo 3 diretamente.</strong></p>
+          <div class="tip"><strong>Atenção:</strong> o diagnóstico é o pré-requisito para criar o plano. Não crie plano sem entender a situação do parceiro.</div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fline"></div>
+        <div class="fnum fnum-before">2</div>
+        <div class="fbody">
+          <div class="fbody-lbl">Antes do plano · Opcional mas recomendado</div>
+          <h4>Conversa ou reunião de diagnóstico com o parceiro</h4>
+          <p>Entenda o que o parceiro quer: crescer receita, ganhar tempo, organizar os clientes? Identifique barreiras e o que ele já tentou. Uma reunião presencial ou por vídeo é o ideal — mas uma troca no WhatsApp já vale se gerar o contexto necessário.</p>
+          <div class="tip-sf"><strong>Registrar no Salesforce como Atividade:</strong> anote a data da conversa, os pontos levantados, a objeção principal e o que foi combinado. Isso é o histórico de relacionamento — não vai no plano.</div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fline"></div>
+        <div class="fnum fnum-create">3</div>
+        <div class="fbody">
+          <div class="fbody-lbl">Criação do plano · Etapa principal</div>
+          <h4>Criar o plano no CRM Parceiros com contexto preenchido</h4>
+          <p>Com o diagnóstico feito, crie o plano. Nome no formato: <strong>tipo do plano + objetivo objetivo</strong> (ex: "R1 - Ativar 20 licenças desengajadas - Picolli"). Preencha o <strong>Contexto</strong> imediatamente — explique a situação atual e o motivo do plano. Depois adicione as tarefas. <strong>O plano não tem data de finalização geral — o prazo fica em cada tarefa.</strong></p>
+          <div class="tip"><strong>Regra de ouro:</strong> contexto preenchido na hora da criação, nunca depois. Sem contexto, o plano perde referência.</div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fline"></div>
+        <div class="fnum fnum-create">4</div>
+        <div class="fbody">
+          <div class="fbody-lbl">Alinhamento</div>
+          <h4>Apresentar o plano ao parceiro</h4>
+          <p>Mostre o que vai ser feito e as responsabilidades de cada lado. O parceiro precisa entender e concordar. Isso cria compromisso e aumenta adesão na execução.</p>
+          <div class="tip-sf"><strong>Registrar no Salesforce como Atividade:</strong> "Reunião de apresentação do plano — parceiro confirmou piloto com 5 CNPJs."</div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fline"></div>
+        <div class="fnum fnum-after">5</div>
+        <div class="fbody">
+          <div class="fbody-lbl">Execução · Ongoing</div>
+          <h4>Executar e acompanhar cada tarefa</h4>
+          <p>Cada ação executada gera um registro de <strong>Atividade no Salesforce</strong>. As tarefas do plano no CRM Parceiros refletem o projeto — não o log diário. O check semanal é: quais tarefas estão em aberto? Alguma barreira nova apareceu?</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- NOMENCLATURA E TAREFAS -->
+<div id="sec-nomenclatura" class="sec">
+  <div class="pg-tag">03 · Como nomear</div>
+  <div class="pg-title">Nome do plano e criação de tarefas</div>
+  <div class="pg-sub">O nome sempre começa com o tipo de plano seguido de uma informação objetiva. As tarefas descrevem ações que geram resultado.</div>
+
+  <div class="sec-title">Nome do plano</div>
+  <div class="sec-sub">Formato: <strong>Tipo do plano + objetivo objetivo.</strong> O tipo de plano é o cluster (R1, R2, E1...) ou a natureza da ação (Retenção, Expansão, Ativação). O objetivo descreve o que vai mudar — não o que você vai fazer para chegar lá.</div>
+
+  <table class="ntable">
+    <thead>
+      <tr>
+        <th>❌ Errado — sem tipo e descreve ação</th>
+        <th>✅ Correto — tipo + objetivo objetivo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Reunião de diagnóstico Picolli</td>
+        <td>R1 - Ativar 20 licenças desengajadas - Picolli</td>
+      </tr>
+      <tr>
+        <td>Ligar pro parceiro ABC</td>
+        <td>R2 - Reduzir estoque de 52 para 30 licenças - ABC Cont.</td>
+      </tr>
+      <tr>
+        <td>Follow-up onboarding</td>
+        <td>R1 - Onboarding 5 novos clientes - março</td>
+      </tr>
+      <tr>
+        <td>Diagnóstico BPO</td>
+        <td>E1 - Converter perfil contábil para híbrido - XYZ</td>
+      </tr>
+      <tr>
+        <td>Apresentação automação</td>
+        <td>E2 - Implantar automação contábil em 10 CNPJs - Escritório Silva</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <div class="sec-title">Regras para criar tarefas no plano</div>
+  <div class="sec-sub">Cada tarefa representa uma ação que vai mudar a situação do parceiro. Começa com verbo. Não é registro do que você fez — é o que precisa ser feito.</div>
+
+  <div class="trules">
+    <div class="trule trule-bad">
+      <div class="trule-lbl">❌ Tarefas erradas — vão para Atividade no Salesforce</div>
+      <ul>
+        <li><span class="icon">✗</span> "Fiz diagnóstico com o parceiro"</li>
+        <li><span class="icon">✗</span> "Ligação de follow-up"</li>
+        <li><span class="icon">✗</span> "Enviei e-mail para o contador"</li>
+        <li><span class="icon">✗</span> "Reunião de diagnóstico realizada"</li>
+        <li><span class="icon">✗</span> "Apresentei o plano"</li>
+        <li><span class="icon">✗</span> "Parceiro vai treinar o time dele"</li>
+      </ul>
+    </div>
+    <div class="trule trule-good">
+      <div class="trule-lbl">✅ Tarefas corretas — ficam no plano do CRM Parceiros</div>
+      <ul>
+        <li><span class="icon">✓</span> "Levantar histórico e classificar clientes inativos por grau de risco"</li>
+        <li><span class="icon">✓</span> "Realizar ligação de diagnóstico com cada cliente inativo"</li>
+        <li><span class="icon">✓</span> "Agendar sessão de reativação para clientes com barreira identificada"</li>
+        <li><span class="icon">✓</span> "Executar sessões de reativação (30-45 min por cliente)"</li>
+        <li><span class="icon">✓</span> "Definir e enviar missão de uso para cada cliente reativado"</li>
+        <li><span class="icon">✓</span> "Realizar check-in de follow-up com cada cliente reativado"</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="sec-title">Exemplo de plano completo</div>
+  <div class="sec-sub">Baseado no caso real Escritório Contábil Picolli.</div>
+
+  <div class="eplan">
+    <div class="eplan-hdr">
+      <div class="eplan-name">R1 - Ativar 20 licenças desengajadas - Picolli</div>
+      <div class="eplan-badge">CRM Parceiros</div>
+    </div>
+    <div class="eplan-ctx">
+      <strong>Contexto:</strong> 152 licenças CA, 52 desengajadas (34%). Perfil: contabilidade + BPO. Custo embutido em honorários — parceiro não vê risco de churn. Usa Mister Contador para 271 CNPJs a R$8,57/CNPJ (R$2.423/mês total). Objeção principal: custo-benefício da migração. Combinamos apresentar proposta de aproveitamento das licenças desengajadas com foco em produtividade contábil e avaliação de CNPJs elegíveis para BPO Financeiro.
+    </div>
+    <div class="eplan-section">
+      <div class="eplan-section-lbl">Tarefas do plano · CRM Parceiros</div>
+    </div>
+    <div class="eplan-tasks">
+      <div class="etask">
+        <div class="etch"></div>
+        <div class="etask-body">
+          <div class="etask-name">Levantar histórico e classificar os clientes desengajados por grau de risco</div>
+          <div class="etask-meta"><span class="etask-resp">Gerente CA</span></div>
+        </div>
+        <div class="etask-owner-us">Nossa responsabilidade</div>
+      </div>
+      <div class="etask">
+        <div class="etch"></div>
+        <div class="etask-body">
+          <div class="etask-name">Realizar ligação de diagnóstico com cada cliente inativo para entender o bloqueio</div>
+          <div class="etask-meta"><span class="etask-resp">Gerente CA</span></div>
+        </div>
+        <div class="etask-owner-us">Nossa responsabilidade</div>
+      </div>
+      <div class="etask">
+        <div class="etch"></div>
+        <div class="etask-body">
+          <div class="etask-name">Agendar e executar sessões de reativação para clientes com barreira identificada (30-45 min por cliente)</div>
+          <div class="etask-meta"><span class="etask-resp">Gerente CA</span></div>
+        </div>
+        <div class="etask-owner-us">Nossa responsabilidade</div>
+      </div>
+      <div class="etask">
+        <div class="etch"></div>
+        <div class="etask-body">
+          <div class="etask-name">Definir e enviar missão de uso para cada cliente reativado</div>
+          <div class="etask-meta"><span class="etask-resp">Gerente CA</span></div>
+        </div>
+        <div class="etask-owner-us">Nossa responsabilidade</div>
+      </div>
+      <div class="etask">
+        <div class="etch"></div>
+        <div class="etask-body">
+          <div class="etask-name">Realizar check-in de follow-up com cada cliente reativado</div>
+          <div class="etask-meta"><span class="etask-resp">Gerente CA</span></div>
+        </div>
+        <div class="etask-owner-us">Nossa responsabilidade</div>
+      </div>
+    </div>
+    <div class="eplan-section" style="border-top:1px solid var(--border)">
+      <div class="eplan-section-lbl">Atividades relacionadas · Salesforce</div>
+    </div>
+    <div class="eplan-tasks">
+      <div class="eact">
+        <div class="eact-icon">📞</div>
+        <div class="eact-body">
+          <div class="eact-name">Reunião de diagnóstico — 152 licenças, 52 desengajadas. Usa Mister Contador para 271 CNPJs. Objeção: custo-benefício. Combinamos apresentar proposta de reativação.</div>
+          <div class="eact-sys">Atividade · Salesforce — feita</div>
+        </div>
+      </div>
+      <div class="eact">
+        <div class="eact-icon">📋</div>
+        <div class="eact-body">
+          <div class="eact-name">Reunião de apresentação do plano — parceiro aprovou piloto com clientes desengajados. Próximo passo: iniciar classificação por risco.</div>
+          <div class="eact-sys">Atividade · Salesforce — feita</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTEXTO -->
+<div id="sec-contexto" class="sec">
+  <div class="pg-tag">04 · Campo Contexto</div>
+  <div class="pg-title">Como preencher o campo Contexto</div>
+  <div class="pg-sub">O Contexto explica a situação atual do parceiro. Preenchido no momento da criação do plano. Qualquer pessoa do time precisa entender o cenário só de ler o contexto.</div>
+
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-body">
+      <div class="alert-title">Por que o contexto importa</div>
+      <p>Sem contexto, o plano perde referência. Em 30 dias você não vai lembrar por que aquele plano foi criado. Se o gerente mudar, ninguém sabe o que estava acontecendo. O contexto garante continuidade.</p>
+    </div>
+  </div>
+
+  <div class="sec-title" style="margin-bottom:14px">O contexto deve responder 5 perguntas</div>
+
+  <div class="ctx-anatomy">
+    <div class="ctx-header">
+      <div class="ctx-header-t">Campo · Contexto do Plano — CRM Parceiros</div>
+      <div class="ctx-header-sub">Preencher obrigatoriamente no momento da criação</div>
+    </div>
+    <div class="ctx-body">
+      <div class="ctx-field">
+        <div class="ctx-label">1. Situação das licenças</div>
+        <div class="ctx-value">Quantas licenças o parceiro tem e quantas estão engajadas? Qual o percentual?</div>
+      </div>
+      <div class="ctx-field">
+        <div class="ctx-label">2. Perfil de serviço</div>
+        <div class="ctx-value">O parceiro é contábil, BPO ou híbrido? Qual sistema usa hoje para os clientes?</div>
+      </div>
+      <div class="ctx-field">
+        <div class="ctx-label">3. Barreira ou oportunidade identificada</div>
+        <div class="ctx-value">O que foi levantado no diagnóstico? Qual a objeção principal ou oportunidade de crescimento?</div>
+      </div>
+      <div class="ctx-field">
+        <div class="ctx-label">4. O que o parceiro quer</div>
+        <div class="ctx-value">Qual é o objetivo dele: crescer receita, ganhar tempo, organizar clientes?</div>
+      </div>
+      <div class="ctx-field" style="margin-bottom:0">
+        <div class="ctx-label">5. O que combinamos</div>
+        <div class="ctx-value">O que ficou acordado? Qual foi o próximo passo combinado com o parceiro?</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="sec-title" style="margin-bottom:14px">Exemplo de contexto bem preenchido</div>
+  <div class="sec-sub">Baseado no caso real Escritório Contábil Picolli.</div>
+
+  <div class="ctx-example">
+    <div class="ctx-example-lbl">✅ Exemplo real · Picolli S/C Ltda</div>
+    <p>Escritório Contábil Picolli atua com contabilidade + BPO e possui 152 licenças CA, sendo 52 desengajadas (~34%). Parceiro não considera churn pois o custo está embutido nos honorários dos clientes. Usa Mister Contador para 271 empresas, pagando R$8,57 por CNPJ (R$2.423/mês total). Principal objeção: custo-benefício da migração para CA. Informou que o Mister Contador é mais produtivo operacionalmente hoje. Apresentamos o plano de automação contábil e possibilidade de pilotos. Combinamos de apresentar proposta de como aproveitar as licenças desengajadas com foco em produtividade contábil e avaliação de CNPJs elegíveis para BPO Financeiro.</p>
+  </div>
+
+  <div class="card">
+    <h3>O que torna esse contexto bom</h3>
+    <p>Tem os dados concretos (152 licenças, 52 desengajadas, 34%, R$8,57/CNPJ). Explica o motivo da resistência (custo embutido em honorários). Registra o sistema concorrente (Mister Contador). Documenta a objeção principal (custo-benefício). Deixa claro o que foi combinado. Qualquer pessoa do time pode assumir esse parceiro sabendo exatamente onde está o ponto de tensão e qual é o próximo passo.</p>
+  </div>
+</div>
+
+<!-- DIFERENÇA -->
+<div id="sec-diferenca" class="sec">
+  <div class="pg-tag">05 · Diferença</div>
+  <div class="pg-title">Plano vs Atividade — o que vai onde</div>
+  <div class="pg-sub">Gestão de projetos fica no CRM Parceiros. Gestão de produtividade e histórico de relacionamento fica no Salesforce.</div>
+
+  <div class="alert alert-info">
+    <span class="alert-icon">💡</span>
+    <div class="alert-body">
+      <div class="alert-title">Dois sistemas, duas funções</div>
+      <p><strong>CRM Parceiros</strong> = onde o projeto vive. Plano, contexto, tarefas do que precisa ser feito. &nbsp;·&nbsp; <strong>Salesforce</strong> = onde a execução é registrada. Atividades (reuniões, ligações, notas) e tarefas operacionais do gerente.</p>
+    </div>
+  </div>
+
+  <table class="dtable">
+    <thead>
+      <tr>
+        <th>Informação</th>
+        <th>Sistema</th>
+        <th>Campo</th>
+        <th>Exemplo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Situação atual do parceiro</td>
+        <td><span class="sys-label sys-crm">CRM Parceiros</span></td>
+        <td><span class="badge-ctx">Contexto do Plano</span></td>
+        <td>52 licenças desengajadas, usa Mister Contador, objeção de custo</td>
+      </tr>
+      <tr>
+        <td>Objetivo do trabalho com o parceiro</td>
+        <td><span class="sys-label sys-crm">CRM Parceiros</span></td>
+        <td><span class="badge-plan">Nome do Plano</span></td>
+        <td>"R1 - Ativar 20 licenças desengajadas - Picolli"</td>
+      </tr>
+      <tr>
+        <td>Passos para atingir o objetivo</td>
+        <td><span class="sys-label sys-crm">CRM Parceiros</span></td>
+        <td><span class="badge-plan">Tarefas do Plano</span></td>
+        <td>Classificar clientes por risco, executar sessões de reativação...</td>
+      </tr>
+      <tr>
+        <td>Reunião de diagnóstico realizada</td>
+        <td><span class="sys-label sys-sf">Salesforce</span></td>
+        <td><span class="badge-sf">Atividade (feita)</span></td>
+        <td>"Diagnóstico com Picolli — 52 desengajadas, objeção custo-benefício"</td>
+      </tr>
+      <tr>
+        <td>Reunião de apresentação do plano</td>
+        <td><span class="sys-label sys-sf">Salesforce</span></td>
+        <td><span class="badge-sf">Atividade (feita)</span></td>
+        <td>"Parceiro aprovou piloto. Próximo passo: classificar por risco."</td>
+      </tr>
+      <tr>
+        <td>Próximo contato agendado</td>
+        <td><span class="sys-label sys-sf">Salesforce</span></td>
+        <td><span class="badge-sf">Atividade (futura)</span></td>
+        <td>"Check-in pós-reativação — 05/06 às 14h"</td>
+      </tr>
+      <tr>
+        <td>Notas relevantes do diagnóstico</td>
+        <td><span class="sys-label sys-sf">Salesforce</span></td>
+        <td><span class="badge-sf">Atividade (feita)</span></td>
+        <td>"Parceiro usa Mister Contador para 271 CNPJs a R$8,57. Principal dor: tempo de fechamento contábil."</td>
+      </tr>
+      <tr>
+        <td>Execução de tarefas do gerente</td>
+        <td><span class="sys-label sys-sf">Salesforce</span></td>
+        <td><span class="badge-sf">Tarefas (SF)</span></td>
+        <td>Cada tarefa do plano, acompanhada individualmente no Salesforce</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-body">
+      <div class="alert-title">Como verificar se você está no lugar certo</div>
+      <p>Escrevendo algo que <strong>já aconteceu</strong> (fiz, liguei, enviei, apresentei) → <strong>Atividade no Salesforce</strong>. Descrevendo <strong>o que precisa acontecer</strong> para mudar a situação do parceiro → <strong>Tarefas do Plano no CRM Parceiros</strong>. Explicando <strong>por que esse plano foi criado</strong> → <strong>Contexto no CRM Parceiros</strong>.</p>
+    </div>
+  </div>
+</div>
+
+<!-- RESPONSABILIDADE -->
+<div id="sec-responsabilidade" class="sec">
+  <div class="pg-tag">06 · Propriedade</div>
+  <div class="pg-title">A responsabilidade pelo engajamento é nossa</div>
+  <div class="pg-sub">Não basta orientar o parceiro e esperar que ele resolva. O engajamento das licenças é responsabilidade do nosso time. Isso precisa estar refletido nas tarefas do plano.</div>
+
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-body">
+      <div class="alert-title">Erro recorrente</div>
+      <p>Criar tarefas que delegam tudo ao parceiro: "Parceiro vai treinar os clientes", "Contador vai ativar as licenças". Se a tarefa depende só do parceiro, ela não pertence ao plano — pertence ao compromisso combinado e registrado como <strong>Atividade no Salesforce</strong>.</p>
+    </div>
+  </div>
+
+  <div class="owngrid">
+    <div class="ownbox ownbox-us">
+      <div class="ownbox-tag">Nossa responsabilidade — vai no plano</div>
+      <h4>Ações que o gerente executa</h4>
+      <ul>
+        <li><div class="dot"></div>Evento online de onboarding para base desengajada do parceiro</li>
+        <li><div class="dot"></div>Evento online para clientes com CNPJ mas sem licença atribuída</li>
+        <li><div class="dot"></div>Piloto com poucas licenças acompanhando onboarding dos clientes finais</li>
+        <li><div class="dot"></div>Treinamento do time interno do escritório (mínimo 2 pessoas)</li>
+        <li><div class="dot"></div>Mapeamento dos CNPJs elegíveis para ativação ou expansão</li>
+        <li><div class="dot"></div>Definição clara dos contatos de suporte CA e papéis</li>
+        <li><div class="dot"></div>Check de engajamento pós-ativação</li>
+      </ul>
+    </div>
+    <div class="ownbox ownbox-shared">
+      <div class="ownbox-tag">Execução conjunta — parceiro participa</div>
+      <h4>Ações que fazemos junto com o parceiro</h4>
+      <ul>
+        <li><div class="dot"></div>Treinamento do time do escritório (gerente facilita, contador valida)</li>
+        <li><div class="dot"></div>Seleção dos CNPJs para o piloto (parceiro conhece a base)</li>
+        <li><div class="dot"></div>Revisão de resultados do piloto e decisão de expansão</li>
+        <li><div class="dot"></div>Definição de meta de engajamento para o próximo trimestre</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="sec-title" style="margin-bottom:8px">Ações de alto impacto que devem virar tarefa de plano</div>
+  <div class="sec-sub">Mais eficazes do que orientar o parceiro a ativar sozinho.</div>
+
+  <div class="card" style="border-left:3px solid var(--ca-blue)">
+    <h3>🖥️ Evento online para base desengajada</h3>
+    <p>Convocar os clientes desengajados do parceiro para uma sessão de 30 minutos conduzida pelo gerente CA. Foco em resolver o bloqueio de uso. Organização e facilitação são nossas.</p>
+  </div>
+  <div class="card" style="border-left:3px solid var(--ca-blue)">
+    <h3>🧪 Piloto com poucas licenças</h3>
+    <p>Selecionar de 3 a 5 CNPJs e garantir que esses clientes usem bem antes de escalar. O gerente acompanha o onboarding de cada cliente junto ao contador. Não adianta implantar em volume sem garantir o engajamento no piloto.</p>
+  </div>
+  <div class="card" style="border-left:3px solid var(--ca-blue)">
+    <h3>👥 Treinamento do time do escritório</h3>
+    <p>Treinar mais de 1 pessoa. Se só o sócio sabe usar, qualquer ausência interrompe o processo. O treinamento deve cobrir fluxo de emissão, fechamento contábil e automação.</p>
+  </div>
+  <div class="card" style="border-left:3px solid var(--ca-blue)">
+    <h3>📋 Clareza de papéis e contatos</h3>
+    <p>Definir explicitamente: quem é o contato de suporte CA, quem é o gerente responsável, qual o SLA de resposta. O parceiro não deve ficar sem saber a quem recorrer quando um cliente travar.</p>
+  </div>
+</div>
+
+</div><!-- end main -->
+
+<script>
+function showSec(id, el){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  if(el) el.classList.add('active');
+  else {
+    const tabs = document.querySelectorAll('.ntab');
+    const map = {forecast:0,conceito:1,fluxo:2,nomenclatura:3,contexto:4,diferenca:5,responsabilidade:6};
+    if(map[id]!==undefined) tabs[map[id]].classList.add('active');
+  }
+  window.scrollTo(0,0);
+}
+</script>
+</body>
+</html>

@@ -13,23 +13,28 @@ export interface User {
 }
 
 export interface Partner {
-  id: string;                      // coluna E
-  nome: string;                    // coluna F
-  gerente: string;                 // coluna G
-  nivel: string;                   // coluna H
-  perfil_parceiro: string;         // coluna I
-  perfil_servico: string;          // coluna J
-  fila: 'RETENÇÃO' | 'EXPANSÃO';  // coluna B
-  licencas: number;                // coluna Y
-  licencas_engajadas: number;      // coluna Z
-  estoque: number;                 // coluna T
-  percentual_engajamento: number;  // coluna U
-  gerente_id?: string;               // ID do gerente para filtro de acesso (opcional no parser)
+  id: string;
+  accountancy_id?: string;
+  salesforce_id?: string | null;
+  nome: string;
+  gerente: string;
+  nivel: string;
+  perfil_parceiro: string;
+  perfil_servico: string;
+  fila: 'RETENÇÃO' | 'EXPANSÃO';
+  licencas: number;
+  licencas_engajadas: number;
+  estoque: number;
+  percentual_engajamento: number;
+  gerente_id?: string;
+  id_banco?: string;
   cnpjs?: number;
   cnpjs_livres?: number;
   contas_potencial?: number;
   ratio?: number;
-  plano?: string;
+  segmento?: string;
+  atribuidas?: number;
+  percentual_atribuidas?: number;
 }
 
 export interface Plan {
@@ -40,6 +45,11 @@ export interface Plan {
   resultado?: string;
   ativo: boolean;
   created_at: string;
+  playbook_id?: string | null;
+  status_conclusao?: 'sucesso' | 'sem_sucesso' | null;
+  concluido_em?: string | null;
+  concluido_por?: string | null;
+  motivo_insucesso?: string | null;
 }
 
 export interface Task {
@@ -48,6 +58,10 @@ export interface Task {
   titulo: string;
   status: 'backlog' | 'agenda' | 'em_andamento' | 'concluida';
   responsavel: 'gerente' | 'camisa_10' | 'parceiro' | 'outros';
+  observacao?: string;
+  data_conclusao_prevista?: string | null;
+  data_conclusao_original?: string | null;
+  deletada_em?: string | null;
   created_at: string;
 }
 
@@ -58,3 +72,40 @@ export interface ImportLog {
   importado_por: string;
   created_at: string;
 }
+
+export interface AccountPlanning {
+  id: string;
+  gerente_id: string;
+  partner_id?: string | null;
+  partner_externo_id?: string | null;
+  partner_externo_nome?: string | null;
+  partner_externo_contas_potencial?: number | null;
+  semana: string; // DATE ISO
+  tipo_plano: 'Engajar' | 'Substituir' | 'Vender';
+  objetivo: string;
+  contas_potencial?: number | null;
+  meta: number;
+  status: 'Backlog' | 'Fazendo' | 'Pausado' | 'Feito' | 'Cancelado';
+  resultado?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  // joins
+  partners?: { nome: string; accountancy_id: string; contas_potencial?: number | null } | null;
+  users?: { nome: string } | null;
+}
+
+export interface Playbook {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  criado_em: string;
+}
+
+export interface PlaybookTask {
+  id: string;
+  playbook_id: string;
+  titulo: string;
+  responsavel: 'gerente' | 'camisa_10' | 'parceiro' | 'outros';
+  ordem: number;
+}
+

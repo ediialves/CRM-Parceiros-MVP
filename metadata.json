@@ -2,5 +2,5 @@
   "name": "Parceiros CRM V0",
   "description": "CRM operacional para gestão de parceiros, planos de ação e métricas de engajamento.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

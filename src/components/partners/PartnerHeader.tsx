@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, User as UserIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Partner } from '../../types';
+import { SalesforceLinkButton } from '../ui/SalesforceLinkButton';
 
 interface PartnerHeaderProps {
   partner: Partner;
@@ -22,7 +23,10 @@ export const PartnerHeader: React.FC<PartnerHeaderProps> = ({ partner }) => {
 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <span className="text-xs font-mono text-text-secondary">{partner.id}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-mono text-text-secondary">{partner.accountancy_id || partner.id}</span>
+            <SalesforceLinkButton salesforceId={partner.salesforce_id} />
+          </div>
           <h1 className="text-3xl font-bold text-primary">{partner.nome}</h1>
         </div>
         

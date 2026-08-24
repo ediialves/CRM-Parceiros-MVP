@@ -139,7 +139,7 @@ export const Cadastro: React.FC = () => {
             />
           </div>
 
-          <Button type="submit" className="w-full h-12 mt-4" loading={loading}>
+          <Button type="submit" className="w-full h-12 mt-4" isLoading={loading}>
             Cadastrar e Entrar
           </Button>
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Partner, Plan, Task } from '../../types';
 import { SearchInput } from '../ui/SearchInput';
@@ -6,19 +6,109 @@ import { PartnerCard } from './PartnerCard';
 import { FilterDropdown } from '../ui/FilterDropdown';
 import { FilterChip } from '../ui/FilterChip';
 
+const getMonday = (dateStr: string) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(date.setDate(diff));
+  return monday.toISOString().split('T')[0];
+};
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  return `${day}/${month}/${year}`;
+};
+
 interface PartnerListProps {
   partners: Partner[];
+  availablePlans: string[];
 }
 
-export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
+export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePlans }) => {
   const { user, isAdmin } = useAuth();
-  const [search, setSearch] = useState('');
   
-  const [filters, setFilters] = useState({
-    engajamento: '' as string,
-    nivel: [] as string[],
-    fila: '' as string,
+  const [isPlanoOpen, setIsPlanoOpen] = useState(false);
+  const planoRef = React.useRef<HTMLDivElement>(null);
+  const [isGerenteOpen, setIsGerenteOpen] = useState(false);
+  const gerenteRef = React.useRef<HTMLDivElement>(null);
+  const [isStatusPlanoOpen, setIsStatusPlanoOpen] = useState(false);
+  const statusPlanoRef = React.useRef<HTMLDivElement>(null);
+  const [isSemanaCriacaoOpen, setIsSemanaCriacaoOpen] = useState(false);
+  const semanaCriacaoRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (planoRef.current && !planoRef.current.contains(event.target as Node)) {
+        setIsPlanoOpen(false);
+      }
+      if (gerenteRef.current && !gerenteRef.current.contains(event.target as Node)) {
+        setIsGerenteOpen(false);
+      }
+      if (statusPlanoRef.current && !statusPlanoRef.current.contains(event.target as Node)) {
+        setIsStatusPlanoOpen(false);
+      }
+      if (semanaCriacaoRef.current && !semanaCriacaoRef.current.contains(event.target as Node)) {
+        setIsSemanaCriacaoOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const [search, setSearch] = useState(() => {
+    return sessionStorage.getItem('dashboard_search') || '';
   });
+  
+  const [filters, setFilters] = useState(() => {
+    const saved = sessionStorage.getItem('dashboard_filters');
+    const defaultFilters = {
+      engajamento: '' as string,
+      nivel: [] as string[],
+      fila: '' as string,
+      segmento: [] as string[],
+      gerente: [] as string[],
+      statusPlano: '' as string,
+      semanaCriacao: '' as string,
+    };
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed) {
+          if (parsed.plano) {
+            parsed.segmento = typeof parsed.plano === 'string' ? [parsed.plano] : parsed.plano;
+            delete parsed.plano;
+          }
+          if (typeof parsed.segmento === 'string') {
+            parsed.segmento = parsed.segmento ? [parsed.segmento] : [];
+          }
+          if (!parsed.gerente) {
+            parsed.gerente = [];
+          } else if (typeof parsed.gerente === 'string') {
+            parsed.gerente = parsed.gerente ? [parsed.gerente] : [];
+          }
+          return {
+            ...defaultFilters,
+            ...parsed
+          };
+        }
+      } catch (e) {
+        // Ignorar erro de parsing
+      }
+    }
+    return defaultFilters;
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboard_search', search);
+  }, [search]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboard_filters', JSON.stringify(filters));
+  }, [filters]);
 
   const activeFilters = useMemo(() => {
     const active: { id: string; label: string; value: string; type: keyof typeof filters }[] = [];
@@ -40,6 +130,26 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
     if (filters.fila) {
       active.push({ id: 'fila', label: 'Fila', value: filters.fila, type: 'fila' });
     }
+
+    if (filters.segmento && filters.segmento.length > 0) {
+      active.push({ id: 'plano', label: 'Segmento', value: filters.segmento.join(', '), type: 'segmento' });
+    }
+
+    if (filters.gerente && filters.gerente.length > 0) {
+      active.push({ id: 'gerente', label: 'Gerente', value: filters.gerente.join(', '), type: 'gerente' });
+    }
+
+    if (filters.statusPlano) {
+      const labels: Record<string, string> = {
+        'com_plano': 'Com playbook',
+        'sem_plano': 'Sem playbook'
+      };
+      active.push({ id: 'statusPlano', label: 'Playbook', value: labels[filters.statusPlano], type: 'statusPlano' });
+    }
+
+    if (filters.semanaCriacao) {
+      active.push({ id: 'semanaCriacao', label: 'Semana do Plano', value: formatDate(filters.semanaCriacao), type: 'semanaCriacao' });
+    }
     
     return active;
   }, [filters]);
@@ -47,7 +157,7 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
   const clearFilter = (type: keyof typeof filters) => {
     setFilters(prev => ({
       ...prev,
-      [type]: type === 'nivel' ? [] : ''
+      [type]: type === 'nivel' || type === 'segmento' || type === 'gerente' ? [] : ''
     }));
   };
 
@@ -56,8 +166,37 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
       engajamento: '',
       nivel: [],
       fila: '',
+      segmento: [],
+      gerente: [],
+      statusPlano: '',
+      semanaCriacao: '',
     });
   };
+
+  const uniqueGerentes = useMemo(() => {
+    const rawGerentes = partners
+      .map(p => p.gerente)
+      .filter((g): g is string => typeof g === 'string' && g.trim() !== '');
+    const set = new Set<string>(rawGerentes);
+    const list = Array.from(set);
+    return list.sort((a, b) => a.localeCompare(b));
+  }, [partners]);
+
+  const uniqueWeeks = useMemo(() => {
+    const weeksSet = new Set<string>();
+    partners.forEach(partner => {
+      const activePlans = ((partner as any).plans || []).filter((p: any) => p.ativo);
+      activePlans.forEach((p: any) => {
+        if (p.created_at) {
+          const monday = getMonday(p.created_at);
+          if (monday) {
+            weeksSet.add(monday);
+          }
+        }
+      });
+    });
+    return Array.from(weeksSet).sort((a, b) => b.localeCompare(a));
+  }, [partners]);
 
   const filteredPartners = useMemo(() => {
     if (!user) return [];
@@ -69,6 +208,8 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
         partner.accountancy_id?.toLowerCase().includes(search.toLowerCase());
       
       if (!searchMatch) return false;
+
+      const activePlans = ((partner as any).plans || []).filter((p: any) => p.ativo);
 
       // 3. Filtros combinados
       const engValue = partner.percentual_engajamento || 0;
@@ -83,7 +224,20 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
 
       const matchFila = !filters.fila || partner.fila === filters.fila;
 
-      return matchEngajamento && matchNivel && matchFila;
+      const matchPlano = filters.segmento.length === 0 || filters.segmento.includes(partner.segmento);
+
+      const matchGerente = filters.gerente.length === 0 || filters.gerente.includes(partner.gerente);
+
+      const matchStatusPlano =
+        !filters.statusPlano ||
+        (filters.statusPlano === 'com_plano' && activePlans.length > 0) ||
+        (filters.statusPlano === 'sem_plano' && activePlans.length === 0);
+
+      const matchSemanaCriacao =
+        !filters.semanaCriacao ||
+        activePlans.some((p: any) => getMonday(p.created_at) === filters.semanaCriacao);
+
+      return matchEngajamento && matchNivel && matchFila && matchPlano && matchGerente && matchStatusPlano && matchSemanaCriacao;
     });
   }, [search, isAdmin, user?.id, partners, filters]);
 
@@ -98,10 +252,272 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
           <SearchInput 
             placeholder="Buscar por nome ou ID..." 
             onSearch={setSearch}
+            value={search}
           />
         </div>
+        
+        {/* Filtro de Plano */}
+        <div className="relative w-full sm:w-auto min-w-[160px]" ref={planoRef}>
+          <button
+            type="button"
+            onClick={() => setIsPlanoOpen(!isPlanoOpen)}
+            className="w-full h-10 px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all cursor-pointer flex items-center justify-between gap-2"
+          >
+            <span className="truncate">
+              {filters.segmento.length === 0 
+                ? 'Segmento: Todos' 
+                : filters.segmento.length === 1
+                  ? `Segmento: ${filters.segmento[0]}`
+                  : `Segmento (${filters.segmento.length})`}
+            </span>
+            <svg
+              className={`w-4 h-4 text-text-secondary transition-transform ${isPlanoOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {isPlanoOpen && (
+            <div className="absolute right-0 mt-1 w-[220px] bg-white border border-border rounded-lg shadow-lg py-2 z-50 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-medium text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={filters.segmento.length === 0}
+                  focus-ring-primary-check="true"
+                  onChange={() => setFilters(prev => ({ ...prev, segmento: [] }))}
+                  className="w-4 h-4 rounded text-primary border-border focus:ring-primary/20 cursor-pointer"
+                />
+                <span className="select-none">Todos</span>
+              </label>
+              
+              <div className="border-t border-border my-1" />
+
+              {availablePlans.map(plano => {
+                const isChecked = filters.segmento.includes(plano);
+                return (
+                  <label key={plano} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-normal text-text-primary">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        const newPlano = e.target.checked
+                          ? [...filters.segmento, plano]
+                          : filters.segmento.filter(p => p !== plano);
+                        setFilters(prev => ({ ...prev, segmento: newPlano }));
+                      }}
+                      className="w-4 h-4 rounded text-primary border-border focus:ring-primary/20 cursor-pointer"
+                    />
+                    <span className="select-none">{plano}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Filtro de Gerente */}
+        {isAdmin && (
+          <div className="relative w-full sm:w-auto min-w-[160px]" ref={gerenteRef}>
+            <button
+              type="button"
+              onClick={() => setIsGerenteOpen(!isGerenteOpen)}
+              className="w-full h-10 px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all cursor-pointer flex items-center justify-between gap-2"
+            >
+              <span className="truncate">
+                {filters.gerente.length === 0 
+                  ? 'Gerente: Todos' 
+                  : filters.gerente.length === 1
+                    ? `Gerente: ${filters.gerente[0]}`
+                    : `Gerente (${filters.gerente.length})`}
+              </span>
+              <svg
+                className={`w-4 h-4 text-text-secondary transition-transform ${isGerenteOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {isGerenteOpen && (
+              <div className="absolute right-0 mt-1 w-[220px] bg-white border border-border rounded-lg shadow-lg py-2 z-50 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200 max-h-[300px] overflow-y-auto">
+                <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-medium text-text-primary">
+                  <input
+                    type="checkbox"
+                    checked={filters.gerente.length === 0}
+                    onChange={() => setFilters(prev => ({ ...prev, gerente: [] }))}
+                    className="w-4 h-4 rounded text-primary border-border focus:ring-primary/20 cursor-pointer"
+                  />
+                  <span className="select-none">Todos</span>
+                </label>
+                
+                <div className="border-t border-border my-1" />
+
+                {uniqueGerentes.map(gerente => {
+                  const isChecked = filters.gerente.includes(gerente);
+                  return (
+                    <label key={gerente} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-normal text-text-primary">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const newGerente = e.target.checked
+                            ? [...filters.gerente, gerente]
+                            : filters.gerente.filter(g => g !== gerente);
+                          setFilters(prev => ({ ...prev, gerente: newGerente }));
+                        }}
+                        className="w-4 h-4 rounded text-primary border-border focus:ring-primary/20 cursor-pointer"
+                      />
+                      <span className="select-none">{gerente}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Filtro Presença de Plano */}
+        <div className="relative w-full sm:w-auto min-w-[160px]" ref={statusPlanoRef}>
+          <button
+            type="button"
+            onClick={() => setIsStatusPlanoOpen(!isStatusPlanoOpen)}
+            className="w-full h-10 px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all cursor-pointer flex items-center justify-between gap-2"
+          >
+            <span className="truncate">
+              {!filters.statusPlano 
+                ? 'Playbook: Todos' 
+                : filters.statusPlano === 'com_plano'
+                  ? 'Com playbook'
+                  : 'Sem playbook'}
+            </span>
+            <svg
+              className={`w-4 h-4 text-text-secondary transition-transform ${isStatusPlanoOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {isStatusPlanoOpen && (
+            <div className="absolute right-0 mt-1 w-[220px] bg-white border border-border rounded-lg shadow-lg py-2 z-50 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-medium text-text-primary">
+                <input
+                  type="radio"
+                  name="statusPlanoSelect"
+                  checked={!filters.statusPlano}
+                  onChange={() => {
+                    setFilters(prev => ({ ...prev, statusPlano: '' }));
+                    setIsStatusPlanoOpen(false);
+                  }}
+                  className="w-4 h-4 text-primary border-border focus:ring-primary/20 cursor-pointer"
+                />
+                <span className="select-none">Todos</span>
+              </label>
+              
+              <div className="border-t border-border my-1" />
+
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-normal text-text-primary">
+                <input
+                  type="radio"
+                  name="statusPlanoSelect"
+                  checked={filters.statusPlano === 'com_plano'}
+                  onChange={() => {
+                    setFilters(prev => ({ ...prev, statusPlano: 'com_plano' }));
+                    setIsStatusPlanoOpen(false);
+                  }}
+                  className="w-4 h-4 text-primary border-border focus:ring-primary/20 cursor-pointer"
+                />
+                <span className="select-none">Com playbook</span>
+              </label>
+
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-normal text-text-primary">
+                <input
+                  type="radio"
+                  name="statusPlanoSelect"
+                  checked={filters.statusPlano === 'sem_plano'}
+                  onChange={() => {
+                    setFilters(prev => ({ ...prev, statusPlano: 'sem_plano' }));
+                    setIsStatusPlanoOpen(false);
+                  }}
+                  className="w-4 h-4 text-primary border-border focus:ring-primary/20 cursor-pointer"
+                />
+                <span className="select-none">Sem playbook</span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* Filtro por Semana de Criação */}
+        <div className="relative w-full sm:w-auto min-w-[160px]" ref={semanaCriacaoRef}>
+          <button
+            type="button"
+            onClick={() => setIsSemanaCriacaoOpen(!isSemanaCriacaoOpen)}
+            className="w-full h-10 px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all cursor-pointer flex items-center justify-between gap-2"
+          >
+            <span className="truncate">
+              {!filters.semanaCriacao 
+                ? 'Semana: Todas' 
+                : `Semana: ${formatDate(filters.semanaCriacao)}`}
+            </span>
+            <svg
+              className={`w-4 h-4 text-text-secondary transition-transform ${isSemanaCriacaoOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {isSemanaCriacaoOpen && (
+            <div className="absolute right-0 mt-1 w-[220px] bg-white border border-border rounded-lg shadow-lg py-2 z-50 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200 max-h-[300px] overflow-y-auto">
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-medium text-text-primary">
+                <input
+                  type="radio"
+                  name="semanaCriacaoSelect"
+                  checked={!filters.semanaCriacao}
+                  onChange={() => {
+                    setFilters(prev => ({ ...prev, semanaCriacao: '' }));
+                    setIsSemanaCriacaoOpen(false);
+                  }}
+                  className="w-4 h-4 text-primary border-border focus:ring-primary/20 cursor-pointer"
+                />
+                <span className="select-none">Todas</span>
+              </label>
+              
+              <div className="border-t border-border my-1" />
+
+              {uniqueWeeks.map(week => {
+                const isSelected = filters.semanaCriacao === week;
+                return (
+                  <label key={week} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface transition-colors cursor-pointer text-sm font-normal text-text-primary">
+                    <input
+                      type="radio"
+                      name="semanaCriacaoSelect"
+                      checked={isSelected}
+                      onChange={() => {
+                        setFilters(prev => ({ ...prev, semanaCriacao: week }));
+                        setIsSemanaCriacaoOpen(false);
+                      }}
+                      className="w-4 h-4 text-primary border-border focus:ring-primary/20 cursor-pointer"
+                    />
+                    <span className="select-none">{formatDate(week)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <FilterDropdown 
-          activeCount={activeFilters.length} 
+          activeCount={activeFilters.filter(f => f.type !== 'plano' && f.type !== 'gerente' && f.type !== 'statusPlano' && f.type !== 'semanaCriacao').length} 
           onClearAll={clearAllFilters}
         >
           {/* Faixa de Engajamento */}
@@ -197,7 +613,7 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
       {/* Linha 3: Contador de Resultados */}
       <div className="flex items-center text-xs text-text-secondary">
         <span>
-          {search ? (
+          {totalFiltered < totalPartners ? (
             <>
               Mostrando <span className="font-medium text-text-primary">{totalFiltered}</span> de <span className="font-medium text-text-primary">{totalPartners}</span> parceiros
             </>
@@ -213,16 +629,13 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners }) => {
         {filteredPartners.length > 0 ? (
           filteredPartners.map(partner => {
             const allPlans = (partner as any).plans ?? [];
-            const activePlan = allPlans.find((p: any) => p.ativo);
-            // Consolidar todas as tasks de todos os planos para o progresso real (consolidado)
-            const allTasks = allPlans.flatMap((p: any) => p.tasks ?? []);
+            const activePlans = allPlans.filter((p: any) => p.ativo);
             
             return (
               <PartnerCard 
                 key={partner.id}
                 partner={partner}
-                plan={activePlan}
-                tasks={allTasks}
+                activePlans={activePlans}
               />
             );
           })

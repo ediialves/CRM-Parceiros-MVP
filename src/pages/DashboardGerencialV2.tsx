@@ -1,0 +1,6854 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
+import { Layout, Users, FileText, CheckCircle2, AlertTriangle, Loader2, ChevronDown, Filter, Bookmark, Trash2, Plus, TrendingUp, Calendar, Clock } from 'lucide-react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Bar, Line } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+interface ManagerStat {
+  id: string;
+  nome: string;
+  partnersCount: number;
+  plansCount: number;
+  coverage: number | null;
+  delayedCount: number;
+  onTimeCount: number;
+}
+
+interface SegmentStat {
+  segment: string;
+  partnersCount: number;
+  plansCount: number;
+  coverage: number | null;
+}
+
+interface WeeklyStat {
+  key: string;
+  label: string;
+  count: number;
+  managers: Record<string, number>;
+}
+
+interface CompletedTasksWeeklyStat {
+  key: string;
+  label: string;
+  total: number;
+  managers: Record<string, number>;
+}
+
+interface FinishedPlansStat {
+  manager: string;
+  count: number;
+}
+
+interface TasksStatusStat {
+  manager: string;
+  backlog: number;
+  agenda: number;
+  em_andamento: number;
+  concluida: number;
+  total: number;
+}
+
+const formatCohortWeekLabel = (dateStr: string) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
+};
+
+const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
+  if (val === null || val === undefined || isNaN(val)) {
+    return { style: {}, className: '' };
+  }
+
+  const clamped = Math.max(0, Math.min(100, val));
+
+  // Anchor points based on user's scale requirements:
+  // < 60%  -> Vermelho / rosa
+  // 60–64% -> Laranja claro
+  // 65–69% -> Amarelo / bege
+  // 70–74% -> Verde claro
+  // 75–79% -> Verde médio
+  // ≥ 80%  -> Verde forte
+  const stops: Array<{ pct: number; bg: [number, number, number] }> = [
+    { pct: 0,   bg: [254, 202, 202] }, // Vermelho (Red-200)
+    { pct: 59,  bg: [254, 226, 226] }, // Vermelho suave
+    { pct: 60,  bg: [254, 215, 170] }, // Laranja claro (Orange-200)
+    { pct: 65,  bg: [254, 240, 138] }, // Amarelo/bege (Yellow-200)
+    { pct: 70,  bg: [187, 247, 208] }, // Verde claro (Green-200)
+    { pct: 75,  bg: [134, 239, 172] }, // Verde médio (Green-300)
+    { pct: 80,  bg: [34, 197, 94]   }, // Verde forte (Green-500)
+    { pct: 100, bg: [21, 128, 61]   }, // Verde muito forte (Green-700)
+  ];
+
+  let lower = stops[0];
+  let upper = stops[stops.length - 1];
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (clamped >= stops[i].pct && clamped <= stops[i + 1].pct) {
+      lower = stops[i];
+      upper = stops[i + 1];
+      break;
+    }
+  }
+
+  const range = upper.pct - lower.pct;
+  const factor = range === 0 ? 0 : (clamped - lower.pct) / range;
+
+  const r = Math.round(lower.bg[0] + factor * (upper.bg[0] - lower.bg[0]));
+  const g = Math.round(lower.bg[1] + factor * (upper.bg[1] - lower.bg[1]));
+  const b = Math.round(lower.bg[2] + factor * (upper.bg[2] - lower.bg[2]));
+
+  let textColor = 'rgb(20, 83, 45)';
+  if (clamped < 60) {
+    textColor = 'rgb(153, 27, 27)';
+  } else if (clamped < 65) {
+    textColor = 'rgb(154, 52, 18)';
+  } else if (clamped < 70) {
+    textColor = 'rgb(113, 63, 18)';
+  } else if (clamped >= 80) {
+    textColor = 'rgb(255, 255, 255)';
+  }
+
+  let fontWeightClass = 'font-medium';
+  if (clamped >= 80) fontWeightClass = 'font-bold';
+  else if (clamped >= 70) fontWeightClass = 'font-semibold';
+
+  return {
+    style: {
+      backgroundColor: `rgb(${r}, ${g}, ${b})`,
+      color: textColor,
+    },
+    className: fontWeightClass,
+  };
+};
+
+export const DashboardGerencialV2: React.FC = () => {
+  const { user, isAdmin, loading: authLoading } = useAuth();
+  
+  const [loadingData, setLoadingData] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [managerStats, setManagerStats] = useState<ManagerStat[]>([]);
+  const [segmentStats, setSegmentStats] = useState<SegmentStat[]>([]);
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
+  const [completedTasksStats, setCompletedTasksStats] = useState<CompletedTasksWeeklyStat[]>([]);
+  const [delayedTasksStats, setDelayedTasksStats] = useState<CompletedTasksWeeklyStat[]>([]);
+  const [finishedPlansStats, setFinishedPlansStats] = useState<FinishedPlansStat[]>([]);
+  const [tasksStatusStats, setTasksStatusStats] = useState<TasksStatusStat[]>([]);
+  const [funnelStats, setFunnelStats] = useState({
+    m1: 0,
+    m2: 0,
+    m3: 0,
+    m4: 0,
+    m5: 0
+  });
+
+  const [rawData, setRawData] = useState<{
+    managersList: any[];
+    partners: any[];
+    plans: any[];
+    tasks: any[];
+    weeklyPlansData: any[];
+    completedTasksData: any[];
+    delayedTasksData: any[];
+    finishedPlansRaw: any[];
+    tasksForStatusRaw: any[];
+    basePlans: any[];
+    snapshots: any[];
+    partnerSnapshots: any[];
+    funnelPartnerSnapshots?: any[];
+    allUsers?: any[];
+  } | null>(null);
+
+  const [selectedPlanos, setSelectedPlanos] = useState<string[]>([]);
+  const [selectedGerentes, setSelectedGerentes] = useState<string[]>([]);
+  const [selectedPlaybookTipo, setSelectedPlaybookTipo] = useState<'todos' | 'playbooks_novos' | 'bau'>('todos');
+  const [comPlano, setComPlano] = useState<'todos' | 'com_plano' | 'sem_plano'>('todos');
+  const [statusEtapaPlano, setStatusEtapaPlano] = useState<'criado' | 'iniciado' | 'finalizado'>('criado');
+  const [statusConclusao, setStatusConclusao] = useState<'todos' | 'sucesso' | 'sem_sucesso' | 'nao_classificado'>('todos');
+  const [selectedFila, setSelectedFila] = useState<'todos' | 'RETENÇÃO' | 'EXPANSÃO'>('todos');
+  const [evolucaoTab, setEvolucaoTab] = useState<'historico' | 'cobertura'>('historico');
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (selectedPlanos.length > 0) count++;
+    if (selectedGerentes.length > 0) count++;
+    if (selectedPlaybookTipo !== 'todos') count++;
+    if (comPlano !== 'todos') count++;
+    if (statusEtapaPlano !== 'criado') count++;
+    if (statusConclusao !== 'todos') count++;
+    if (selectedFila !== 'todos') count++;
+    return count;
+  }, [selectedPlanos, selectedGerentes, selectedPlaybookTipo, comPlano, statusEtapaPlano, statusConclusao, selectedFila]);
+
+  // Historic import count window state ('4' | '8' | 'all')
+  const [historicImportCount, setHistoricImportCount] = useState<'4' | '8' | 'all'>('all');
+
+  // Dropdown open states
+  const [planoDropdownOpen, setPlanoDropdownOpen] = useState(false);
+  const [gerenteDropdownOpen, setGerenteDropdownOpen] = useState(false);
+
+  // Search input states
+  const [planoSearch, setPlanoSearch] = useState('');
+  const [gerenteSearch, setGerenteSearch] = useState('');
+
+  // Saved filters state
+  const [savedFilters, setSavedFilters] = useState<any[]>([]);
+  const [loadingFilters, setLoadingFilters] = useState(false);
+  const [newFilterName, setNewFilterName] = useState('');
+  const [isSavingFilter, setIsSavingFilter] = useState(false);
+  const [showSaveInput, setShowSaveInput] = useState(false);
+
+  // Playbook step advance states
+  const [playbooksList, setPlaybooksList] = useState<{ id: string; nome: string }[]>([]);
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>('');
+  const [loadingStepData, setLoadingStepData] = useState<boolean>(false);
+  const [stepTasks, setStepTasks] = useState<{ id: string; titulo: string; ordem: number }[]>([]);
+  const [stepHistory, setStepHistory] = useState<any[]>([]);
+
+  const fetchSavedFilters = async () => {
+    try {
+      setLoadingFilters(true);
+      const { data, error } = await supabase
+        .from('saved_filters')
+        .select('*')
+        .eq('dashboard', 'dashboard_gerencial_v2')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedFilters(data || []);
+    } catch (err) {
+      console.error('Erro ao buscar filtros salvos:', err);
+    } finally {
+      setLoadingFilters(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && isAdmin) {
+      fetchSavedFilters();
+    }
+  }, [user, isAdmin]);
+
+  const handleSaveFilter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFilterName.trim()) return;
+    if (
+      selectedPlanos.length === 0 &&
+      selectedGerentes.length === 0 &&
+      selectedPlaybookTipo === 'todos' &&
+      comPlano === 'todos' &&
+      statusEtapaPlano === 'criado' &&
+      statusConclusao === 'todos' &&
+      selectedFila === 'todos'
+    ) return;
+
+    try {
+      setIsSavingFilter(true);
+      const { error } = await supabase
+        .from('saved_filters')
+        .insert({
+          user_id: user?.id,
+          dashboard: 'dashboard_gerencial_v2',
+          nome: newFilterName.trim(),
+          planos: selectedPlanos,
+          gerentes: selectedGerentes,
+          plano_modo: 'incluir',
+          gerente_modo: 'incluir',
+          origem_playbook: selectedPlaybookTipo,
+          plano_existente: comPlano,
+          status_etapa_plano: statusEtapaPlano,
+          status_conclusao_filtro: statusConclusao,
+          fila: selectedFila
+        });
+
+      if (error) throw error;
+
+      setNewFilterName('');
+      setShowSaveInput(false);
+      await fetchSavedFilters();
+    } catch (err) {
+      console.error('Erro ao salvar filtro:', err);
+    } finally {
+      setIsSavingFilter(false);
+    }
+  };
+
+  const handleDeleteFilter = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('saved_filters')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      await fetchSavedFilters();
+    } catch (err) {
+      console.error('Erro ao excluir filtro:', err);
+    }
+  };
+
+  const handleApplyFilter = (filter: any) => {
+    setSelectedPlanos(filter.planos || []);
+    setSelectedGerentes(filter.gerentes || []);
+    setSelectedPlaybookTipo(filter.origem_playbook || 'todos');
+    setComPlano(filter.plano_existente || 'todos');
+    setStatusEtapaPlano(filter.status_etapa_plano || 'criado');
+    setStatusConclusao(filter.status_conclusao_filtro || 'todos');
+    setSelectedFila(filter.fila || 'todos');
+  };
+
+  const availablePlanos = useMemo(() => {
+    if (!rawData) return [];
+    const planos = rawData.partners.map(p => p.segmento?.trim()).filter(Boolean);
+    return Array.from(new Set(planos)).sort();
+  }, [rawData]);
+
+  const availableGerentes = useMemo(() => {
+    if (!rawData) return [];
+    const gerentes = rawData.managersList.map(m => m.nome).filter(Boolean);
+    return Array.from(new Set(gerentes)).sort();
+  }, [rawData]);
+
+  const filteredPlanos = useMemo(() => {
+    return availablePlanos.filter(p =>
+      p.toLowerCase().includes(planoSearch.toLowerCase())
+    );
+  }, [availablePlanos, planoSearch]);
+
+  const filteredGerentes = useMemo(() => {
+    return availableGerentes.filter(g =>
+      g.toLowerCase().includes(gerenteSearch.toLowerCase())
+    );
+  }, [availableGerentes, gerenteSearch]);
+
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+
+    let isMounted = true;
+
+    const fetchData = async () => {
+      try {
+        setLoadingData(true);
+        setErrorMsg(null);
+
+        // 1. Get gerentes alfabeticamente usando RPC para contornar RLS
+        const { data: fetchUsers, error: usersErr } = await supabase
+          .rpc('get_all_users_for_admin');
+
+        if (usersErr) throw usersErr;
+        const managersList = (fetchUsers || [])
+          .filter((u: any) => u.role === 'gerente')
+          .sort((a: any, b: any) => (a.nome || '').localeCompare(b.nome || ''));
+
+        // 2. Paginated fetch of partners (gerente_id, segmento, gerente)
+        const fetchAllPartners = async () => {
+          let allPartners: any[] = [];
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data, error } = await supabase
+              .from('partners')
+              .select('id, gerente_id, gerente, segmento, fila')
+              .range(from, from + limit - 1);
+            if (error) throw error;
+            if (data && data.length > 0) {
+              allPartners = [...allPartners, ...data];
+              if (data.length < limit) hasMore = false;
+              else from += limit;
+            } else {
+              hasMore = false;
+            }
+          }
+          return allPartners;
+        };
+
+        // 3. Paginated fetch of all base plans
+        const fetchAllBasePlans = async () => {
+          let allPlans: any[] = [];
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data, error } = await supabase
+              .from('plans')
+              .select('id, ativo, status_conclusao, partner_id, created_at, playbook_id')
+              .range(from, from + limit - 1);
+            if (error) throw error;
+            if (data && data.length > 0) {
+              allPlans = [...allPlans, ...data];
+              if (data.length < limit) hasMore = false;
+              else from += limit;
+            } else {
+              hasMore = false;
+            }
+          }
+          return allPlans;
+        };
+
+        // 4. Paginated fetch of non-deleted tasks
+        const fetchAllTasks = async () => {
+          let allTasks: any[] = [];
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data, error } = await supabase
+              .from('tasks')
+              .select('id, status, deletada_em, data_conclusao_original, plan_id, ordem')
+              .is('deletada_em', null)
+              .range(from, from + limit - 1);
+            if (error) throw error;
+            if (data && data.length > 0) {
+              allTasks = [...allTasks, ...data];
+              if (data.length < limit) hasMore = false;
+              else from += limit;
+            } else {
+              hasMore = false;
+            }
+          }
+          return allTasks;
+        };
+
+        const fetchSnapshots = async () => {
+          try {
+            const { data, error } = await supabase
+              .from('playbook_funnel_snapshots')
+              .select('semana, segmento, parceiros_no_segmento, parceiros_com_plano_criado, parceiros_com_plano_ativo, parceiros_ativo_atrasado, parceiros_finalizado')
+              .order('semana', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          } catch (err) {
+            console.warn('Falha ao buscar snapshots da tabela playbook_funnel_snapshots:', err);
+            return [];
+          }
+        };
+
+        const fetchPlaybooks = async () => {
+          try {
+            const { data, error } = await supabase
+              .from('playbooks')
+              .select('id, nome')
+              .order('nome', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          } catch (err) {
+            console.warn('Falha ao buscar playbooks:', err);
+            return [];
+          }
+        };
+
+        const fetchPartnerSnapshots = async () => {
+          try {
+            let allSnapshots: any[] = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+            while (hasMore) {
+              const { data, error } = await supabase
+                .from('partner_snapshots')
+                .select('partner_id, imported_at, licencas, licencas_engajadas, import_completo, plano')
+                .range(from, from + limit - 1);
+              if (error) throw error;
+              if (data && data.length > 0) {
+                allSnapshots = [...allSnapshots, ...data];
+                if (data.length < limit) hasMore = false;
+                else from += limit;
+              } else {
+                hasMore = false;
+              }
+            }
+            return allSnapshots;
+          } catch (err) {
+            console.warn('Falha ao buscar partner_snapshots:', err);
+            return [];
+          }
+        };
+
+        const fetchFunnelPartnerSnapshots = async () => {
+          try {
+            let allSnapshots: any[] = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+            while (hasMore) {
+              const { data, error } = await supabase
+                .from('playbook_funnel_partner_snapshots')
+                .select('semana, partner_id, gerente, segmento, origem_playbook, tem_plano_criado, tem_plano_finalizado')
+                .range(from, from + limit - 1);
+              if (error) throw error;
+              if (data && data.length > 0) {
+                allSnapshots = [...allSnapshots, ...data];
+                if (data.length < limit) hasMore = false;
+                else from += limit;
+              } else {
+                hasMore = false;
+              }
+            }
+            return allSnapshots;
+          } catch (err) {
+            console.warn('Falha ao buscar playbook_funnel_partner_snapshots:', err);
+            return [];
+          }
+        };
+
+        // Calculate the date 8 weeks ago starting on Monday, T12:00:00
+        const getMondays = () => {
+          const mondays: Date[] = [];
+          const now = new Date();
+          const day = now.getDay();
+          const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+          const currentMonday = new Date(now.setDate(diff));
+          currentMonday.setHours(12, 0, 0, 0);
+
+          for (let i = 7; i >= 0; i--) {
+            const d = new Date(currentMonday);
+            d.setDate(d.getDate() - (i * 7));
+            mondays.push(d);
+          }
+          return mondays;
+        };
+
+        const mondays = getMondays();
+        const startOfWeek8WeeksAgo = mondays[0];
+        const year = startOfWeek8WeeksAgo.getFullYear();
+        const month = String(startOfWeek8WeeksAgo.getMonth() + 1).padStart(2, '0');
+        const dayStr = String(startOfWeek8WeeksAgo.getDate()).padStart(2, '0');
+        const gteDateString = `${year}-${month}-${dayStr}T12:00:00`;
+
+        const wrapFetch = async (name: string, fn: () => Promise<any>) => {
+          try {
+            return await fn();
+          } catch (e: any) {
+            console.error(`Erro na busca [${name}]:`, e);
+            throw new Error(`Erro na busca [${name}]: ${e.message || JSON.stringify(e)}`);
+          }
+        };
+
+        const [partners, basePlans, tasks, snapshots, playbooksData, partnerSnapshots, funnelPartnerSnapshots] = await Promise.all([
+          wrapFetch('fetchAllPartners', fetchAllPartners),
+          wrapFetch('fetchAllBasePlans', fetchAllBasePlans),
+          wrapFetch('fetchAllTasks', fetchAllTasks),
+          wrapFetch('fetchSnapshots', fetchSnapshots),
+          wrapFetch('fetchPlaybooks', fetchPlaybooks),
+          wrapFetch('fetchPartnerSnapshots', fetchPartnerSnapshots),
+          wrapFetch('fetchFunnelPartnerSnapshots', fetchFunnelPartnerSnapshots)
+        ]);
+
+        if (!isMounted) return;
+
+        setPlaybooksList(playbooksData || []);
+
+        // Map plans to only active ones for rawData.plans
+        const plans = basePlans.filter((p: any) => p.ativo === true);
+
+        // Map weeklyPlansData: plans created >= gteDateString with partners(gerente_id, gerente)
+        const weeklyPlansData = basePlans
+          .filter((p: any) => p.created_at && p.created_at >= gteDateString)
+          .map((p: any) => {
+            const partner = partners.find((pt: any) => pt.id === p.partner_id);
+            return {
+              id: p.id,
+              created_at: p.created_at,
+              partner_id: p.partner_id,
+              partners: partner ? {
+                gerente_id: partner.gerente_id,
+                gerente: partner.gerente
+              } : null
+            };
+          });
+
+        // Map completedTasksData: tasks with status === 'concluida'
+        const completedTasksData = tasks
+          .filter((t: any) => t.status === 'concluida')
+          .map((t: any) => {
+            const plan = basePlans.find((pl: any) => pl.id === t.plan_id);
+            const partner = plan ? partners.find((pt: any) => pt.id === plan.partner_id) : null;
+            return {
+              id: t.id,
+              status: t.status,
+              data_conclusao_original: t.data_conclusao_original,
+              deletada_em: t.deletada_em,
+              plan_id: t.plan_id,
+              plans: plan ? {
+                partner_id: plan.partner_id,
+                partners: partner ? {
+                  gerente: partner.gerente
+                } : null
+              } : null
+            };
+          });
+
+        // Map delayedTasksData: tasks with status !== 'concluida' and data_conclusao_original < nowIso
+        const nowIso = new Date().toISOString();
+        const delayedTasksData = tasks
+          .filter((t: any) => t.status !== 'concluida' && t.data_conclusao_original && t.data_conclusao_original < nowIso)
+          .map((t: any) => {
+            const plan = basePlans.find((pl: any) => pl.id === t.plan_id);
+            const partner = plan ? partners.find((pt: any) => pt.id === plan.partner_id) : null;
+            return {
+              id: t.id,
+              status: t.status,
+              data_conclusao_original: t.data_conclusao_original,
+              deletada_em: t.deletada_em,
+              plan_id: t.plan_id,
+              plans: plan ? {
+                partner_id: plan.partner_id,
+                partners: partner ? {
+                  gerente: partner.gerente
+                } : null
+              } : null
+            };
+          });
+
+        // Map finishedPlansRaw: all plans with partner(gerente) and tasks(status, deletada_em)
+        const finishedPlansRaw = basePlans.map((p: any) => {
+          const partner = partners.find((pt: any) => pt.id === p.partner_id);
+          const planTasks = tasks.filter((t: any) => t.plan_id === p.id);
+          return {
+            id: p.id,
+            ativo: p.ativo,
+            partner_id: p.partner_id,
+            partners: partner ? {
+              gerente: partner.gerente
+            } : null,
+            tasks: planTasks.map((t: any) => ({
+              status: t.status,
+              deletada_em: t.deletada_em
+            }))
+          };
+        });
+
+        // Map tasksForStatusRaw: all tasks with plans(partner_id, partners(gerente))
+        const tasksForStatusRaw = tasks.map((t: any) => {
+          const plan = basePlans.find((pl: any) => pl.id === t.plan_id);
+          const partner = plan ? partners.find((pt: any) => pt.id === plan.partner_id) : null;
+          return {
+            status: t.status,
+            deletada_em: t.deletada_em,
+            plan_id: t.plan_id,
+            plans: plan ? {
+              partner_id: plan.partner_id,
+              partners: partner ? {
+                gerente: partner.gerente
+              } : null
+            } : null
+          };
+        });
+
+        setRawData({
+          managersList,
+          partners,
+          plans,
+          tasks,
+          weeklyPlansData,
+          completedTasksData,
+          delayedTasksData,
+          finishedPlansRaw,
+          tasksForStatusRaw,
+          basePlans,
+          snapshots,
+          partnerSnapshots,
+          funnelPartnerSnapshots,
+          allUsers: fetchUsers || []
+        });
+      } catch (err: any) {
+        console.error('Erro ao buscar dados do dashboard gerencial V2:', err);
+        if (isMounted) {
+          setErrorMsg(err.message || 'Erro ao carregar dados do banco');
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingData(false);
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, isAdmin]);
+
+  // Reactive calculations when rawData or filters change
+  useEffect(() => {
+    if (!rawData) return;
+
+    const {
+      managersList,
+      partners,
+      plans,
+      tasks,
+      weeklyPlansData,
+      completedTasksData,
+      delayedTasksData,
+      finishedPlansRaw,
+      tasksForStatusRaw,
+      basePlans,
+      partnerSnapshots,
+      allUsers
+    } = rawData;
+
+    const validUserNames = new Set(
+      (allUsers || managersList || []).map((u: any) => (u.nome || '').trim().toLowerCase()).filter(Boolean)
+    );
+
+    const getSingularJoin = (joinVal: any): any => {
+      if (!joinVal) return null;
+      if (Array.isArray(joinVal)) {
+        return joinVal[0] || null;
+      }
+      return joinVal;
+    };
+
+    const getPluralJoin = (joinVal: any): any[] => {
+      if (!joinVal) return [];
+      if (Array.isArray(joinVal)) {
+        return joinVal;
+      }
+      return [joinVal];
+    };
+
+    const hoje = new Date().toISOString().split('T')[0];
+
+    // Pre-calculate partner IDs for "Playbooks novos"
+    const playbooksNovosPartnerIds = new Set<string>();
+    (basePlans || []).forEach((p: any) => {
+      if (p.playbook_id != null && p.partner_id) {
+        playbooksNovosPartnerIds.add(p.partner_id);
+      }
+    });
+
+    // Map plans by partner_id
+    const partnerToPlansMap = new Map<string, any[]>();
+    (basePlans || []).forEach((p: any) => {
+      if (p && p.id && p.partner_id) {
+        const list = partnerToPlansMap.get(p.partner_id) || [];
+        list.push(p);
+        partnerToPlansMap.set(p.partner_id, list);
+      }
+    });
+
+    // Map tasks by plan_id
+    const planToTasksMap = new Map<string, any[]>();
+    (tasks || []).forEach((t: any) => {
+      if (t && t.plan_id && !t.deletada_em) {
+        const list = planToTasksMap.get(t.plan_id) || [];
+        list.push(t);
+        planToTasksMap.set(t.plan_id, list);
+      }
+    });
+
+    // Pre-calculate partner sets
+    const partnersWithPlanIds = new Set<string>(
+      (basePlans || []).map((p: any) => (p && p.id && p.partner_id ? p.partner_id : null)).filter(Boolean)
+    );
+
+    const partnersWithIniciadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === true && pTasks.some((t: any) => t.status === 'concluida') && !todasTasksConcluidas) {
+          partnersWithIniciadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithFinalizadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === false || todasTasksConcluidas) {
+          partnersWithFinalizadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithSucessoIds = new Set<string>();
+    const partnersWithSemSucessoIds = new Set<string>();
+    const partnersWithNaoClassificadoIds = new Set<string>();
+
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        if (p.status_conclusao === 'sucesso') {
+          partnersWithSucessoIds.add(partnerId);
+        }
+        if (p.status_conclusao === 'sem_sucesso') {
+          partnersWithSemSucessoIds.add(partnerId);
+        }
+        const pTasks = planToTasksMap.get(p.id) || [];
+        if (
+          pTasks.length > 0 &&
+          pTasks.every((t: any) => t.status === 'concluida') &&
+          (!p.status_conclusao || p.status_conclusao === '')
+        ) {
+          partnersWithNaoClassificadoIds.add(partnerId);
+        }
+      }
+    });
+
+    // Helper to check if a partner passes the current filters
+    const partnerPassesFilter = (partner: any) => {
+      if (!partner) return false;
+
+      // 1. Filter by Plano
+      const planoVal = partner.segmento?.trim() || '';
+      if (selectedPlanos.length > 0) {
+        if (!selectedPlanos.includes(planoVal)) return false;
+      }
+
+      // 2. Filter by Gerente
+      const managerObj = managersList.find((m: any) => m.id === partner.gerente_id);
+      const managerName = managerObj?.nome || 'Sem Gerente';
+      if (selectedGerentes.length > 0) {
+        if (!selectedGerentes.includes(managerName)) return false;
+      }
+
+      // 3. Filter by Playbook Tipo (Todos / Playbooks novos / BAU)
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!playbooksNovosPartnerIds.has(partner.id)) return false;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (playbooksNovosPartnerIds.has(partner.id)) return false;
+      }
+
+      // 4. Filter by Com Plano
+      if (comPlano === 'com_plano') {
+        if (!partnersWithPlanIds.has(partner.id)) return false;
+      } else if (comPlano === 'sem_plano') {
+        if (partnersWithPlanIds.has(partner.id)) return false;
+      }
+
+      // 5. Filter by Status do Plano
+      if (statusEtapaPlano === 'iniciado') {
+        if (!partnersWithIniciadoIds.has(partner.id)) return false;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!partnersWithFinalizadoIds.has(partner.id)) return false;
+      }
+
+      // 6. Filter by Status de Conclusão
+      if (statusConclusao === 'sucesso') {
+        if (!partnersWithSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (!partnersWithSemSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'nao_classificado') {
+        if (!partnersWithNaoClassificadoIds.has(partner.id)) return false;
+      }
+
+      // 7. Filter by Fila (Retenção / Expansão)
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return false;
+      }
+
+      return true;
+    };
+
+    // Helper to check if a partner passes all filters except statusConclusao
+    const partnerPassesFilterWithoutStatusConclusao = (partner: any) => {
+      if (!partner) return false;
+
+      // 1. Filter by Plano
+      const planoVal = partner.segmento?.trim() || '';
+      if (selectedPlanos.length > 0) {
+        if (!selectedPlanos.includes(planoVal)) return false;
+      }
+
+      // 2. Filter by Gerente
+      const managerObj = managersList.find((m: any) => m.id === partner.gerente_id);
+      const managerName = managerObj?.nome || 'Sem Gerente';
+      if (selectedGerentes.length > 0) {
+        if (!selectedGerentes.includes(managerName)) return false;
+      }
+
+      // 3. Filter by Playbook Tipo (Todos / Playbooks novos / BAU)
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!playbooksNovosPartnerIds.has(partner.id)) return false;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (playbooksNovosPartnerIds.has(partner.id)) return false;
+      }
+
+      // 4. Filter by Com Plano
+      if (comPlano === 'com_plano') {
+        if (!partnersWithPlanIds.has(partner.id)) return false;
+      } else if (comPlano === 'sem_plano') {
+        if (partnersWithPlanIds.has(partner.id)) return false;
+      }
+
+      // 5. Filter by Status do Plano
+      if (statusEtapaPlano === 'iniciado') {
+        if (!partnersWithIniciadoIds.has(partner.id)) return false;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!partnersWithFinalizadoIds.has(partner.id)) return false;
+      }
+
+      // 6. Filter by Fila (Retenção / Expansão)
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return false;
+      }
+
+      return true;
+    };
+
+    const globalFilteredPartnerIds = new Set(partners.filter(partnerPassesFilterWithoutStatusConclusao).map(p => p.id));
+
+    // Filtered list of partners
+    const filteredPartners = partners.filter(partnerPassesFilter);
+    const filteredPartnerIds = new Set(filteredPartners.map(p => p.id));
+
+    // 1. "Execução por Gerente" calculations (using filtered partners)
+    const partnersByManager = new Map<string, string[]>(); // gerente_id -> partner_ids[]
+    filteredPartners.forEach(p => {
+      if (p.gerente_id) {
+        const list = partnersByManager.get(p.gerente_id) || [];
+        list.push(p.id);
+        partnersByManager.set(p.gerente_id, list);
+      }
+    });
+
+    const plansByManager = new Map<string, any[]>(); // gerente_id -> plans[]
+    plans.forEach(plan => {
+      if (!filteredPartnerIds.has(plan.partner_id)) return;
+      const partner = filteredPartners.find(p => p.id === plan.partner_id);
+      if (partner && partner.gerente_id) {
+        const mgrId = partner.gerente_id;
+        const list = plansByManager.get(mgrId) || [];
+        list.push(plan);
+        plansByManager.set(mgrId, list);
+      }
+    });
+
+    const delayedPlanIds = new Set<string>();
+    tasks.forEach(t => {
+      if (
+        t.status !== 'concluida' &&
+        t.data_conclusao_original &&
+        t.data_conclusao_original < hoje
+      ) {
+        delayedPlanIds.add(t.plan_id);
+      }
+    });
+
+    const stats: ManagerStat[] = managersList
+      .map((user: any) => {
+        const managerId = user.id;
+        const partnersCount = (partnersByManager.get(managerId) || []).length;
+        const activePlans = plansByManager.get(managerId) || [];
+        const plansCount = new Set(activePlans.map((p: any) => p.partner_id)).size;
+        
+        const coverage = partnersCount > 0 ? (plansCount / partnersCount) * 100 : null;
+        
+        const delayedCount = new Set(activePlans.filter(p => delayedPlanIds.has(p.id)).map((p: any) => p.partner_id)).size;
+        const onTimeCount = plansCount - delayedCount;
+
+        return {
+          id: managerId,
+          nome: user.nome || 'Sem Nome',
+          partnersCount,
+          plansCount,
+          coverage,
+          delayedCount,
+          onTimeCount
+        };
+      })
+      .filter((stat: ManagerStat) => {
+        if (selectedGerentes.length > 0) {
+          return selectedGerentes.includes(stat.nome);
+        }
+        return true;
+      });
+
+    setManagerStats(stats);
+
+    // 2. "Planos por Segmento" calculations (using filtered partners)
+    const segmentsSet = new Set<string>();
+    filteredPartners.forEach(p => {
+      if (p.segmento && p.segmento.trim() !== '') {
+        segmentsSet.add(p.segmento.trim());
+      }
+    });
+
+    const partnersBySegment = new Map<string, string[]>();
+    filteredPartners.forEach(p => {
+      if (p.segmento && p.segmento.trim() !== '') {
+        const seg = p.segmento.trim();
+        const list = partnersBySegment.get(seg) || [];
+        list.push(p.id);
+        partnersBySegment.set(seg, list);
+      }
+    });
+
+    const plansBySegment = new Map<string, any[]>();
+    plans.forEach(plan => {
+      if (!filteredPartnerIds.has(plan.partner_id)) return;
+      const partner = filteredPartners.find(p => p.id === plan.partner_id);
+      if (partner && partner.segmento && partner.segmento.trim() !== '') {
+        const seg = partner.segmento.trim();
+        const list = plansBySegment.get(seg) || [];
+        list.push(plan);
+        plansBySegment.set(seg, list);
+      }
+    });
+
+    const calculatedSegmentStats: SegmentStat[] = Array.from(segmentsSet).map(seg => {
+      const partnersCount = (partnersBySegment.get(seg) || []).length;
+      const activePlans = plansBySegment.get(seg) || [];
+      const plansCount = new Set(activePlans.map((p: any) => p.partner_id)).size;
+      const coverage = partnersCount > 0 ? (plansCount / partnersCount) * 100 : null;
+
+      return {
+        segment: seg,
+        partnersCount,
+        plansCount,
+        coverage
+      };
+    }).sort((a, b) => b.partnersCount - a.partnersCount);
+
+    setSegmentStats(calculatedSegmentStats);
+
+    // 3. "Planos Criados WoW" calculations (using filtered partners)
+    const getMondayOfDate = (d: Date): string => {
+      const dateCopy = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+      const day = dateCopy.getDay();
+      const diff = dateCopy.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(dateCopy.setDate(diff));
+      const y = monday.getFullYear();
+      const m = String(monday.getMonth() + 1).padStart(2, '0');
+      const rDay = String(monday.getDate()).padStart(2, '0');
+      return `${y}-${m}-${rDay}`;
+    };
+
+    const getMondays = () => {
+      const mondays: Date[] = [];
+      const now = new Date();
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      const currentMonday = new Date(now.setDate(diff));
+      currentMonday.setHours(12, 0, 0, 0);
+
+      for (let i = 7; i >= 0; i--) {
+        const d = new Date(currentMonday);
+        d.setDate(d.getDate() - (i * 7));
+        mondays.push(d);
+      }
+      return mondays;
+    };
+
+    const mondays = getMondays();
+    const weekKeys = mondays.map(m => {
+      const y = m.getFullYear();
+      const mon = String(m.getMonth() + 1).padStart(2, '0');
+      const d = String(m.getDate()).padStart(2, '0');
+      return `${y}-${mon}-${d}`;
+    });
+
+    const calculatedWeeklyStats: WeeklyStat[] = weekKeys.map((key, idx) => {
+      const m = mondays[idx];
+      const label = `${String(m.getDate()).padStart(2, '0')}/${String(m.getMonth() + 1).padStart(2, '0')}`;
+      return {
+        key,
+        label,
+        count: 0,
+        managers: {}
+      };
+    });
+
+    weeklyPlansData.forEach(plan => {
+      if (!plan.created_at) return;
+      if (!filteredPartnerIds.has(plan.partner_id)) return;
+
+      const planMondayKey = getMondayOfDate(new Date(plan.created_at));
+      const weekStat = calculatedWeeklyStats.find(w => w.key === planMondayKey);
+      if (weekStat) {
+        weekStat.count += 1;
+        const partnerObj = getSingularJoin(plan.partners);
+        const managerName = partnerObj?.gerente || 'Sem Gerente';
+        weekStat.managers[managerName] = (weekStat.managers[managerName] || 0) + 1;
+      }
+    });
+
+    setWeeklyStats(calculatedWeeklyStats);
+
+    // 4. Operational Reports cards (UNFILTERED AT THIS STAGE)
+    const calculatedCompletedTasksWeekly: CompletedTasksWeeklyStat[] = weekKeys.map((key, idx) => {
+      const m = mondays[idx];
+      const label = `${String(m.getDate()).padStart(2, '0')}/${String(m.getMonth() + 1).padStart(2, '0')}`;
+      return {
+        key,
+        label,
+        total: 0,
+        managers: {}
+      };
+    });
+
+    const parseDateString = (dateStr: string): Date => {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        return new Date(y, m, d, 12, 0, 0);
+      }
+      return new Date(dateStr);
+    };
+
+    completedTasksData.forEach(task => {
+      if (!task.data_conclusao_original) return;
+      const planObj = getSingularJoin(task.plans);
+      if (!planObj || !filteredPartnerIds.has(planObj.partner_id)) return;
+
+      const dateObj = parseDateString(task.data_conclusao_original);
+      const taskMondayKey = getMondayOfDate(dateObj);
+      const weekStat = calculatedCompletedTasksWeekly.find(w => w.key === taskMondayKey);
+      if (weekStat) {
+        weekStat.total += 1;
+        const partnerObj = getSingularJoin(planObj?.partners);
+        const managerName = partnerObj?.gerente || 'Sem Gerente';
+        weekStat.managers[managerName] = (weekStat.managers[managerName] || 0) + 1;
+      }
+    });
+
+    setCompletedTasksStats(calculatedCompletedTasksWeekly);
+
+    const calculatedDelayedTasksWeekly: CompletedTasksWeeklyStat[] = weekKeys.map((key, idx) => {
+      const m = mondays[idx];
+      const label = `${String(m.getDate()).padStart(2, '0')}/${String(m.getMonth() + 1).padStart(2, '0')}`;
+      return {
+        key,
+        label,
+        total: 0,
+        managers: {}
+      };
+    });
+
+    delayedTasksData.forEach(task => {
+      if (!task.data_conclusao_original) return;
+      const planObj = getSingularJoin(task.plans);
+      if (!planObj || !filteredPartnerIds.has(planObj.partner_id)) return;
+
+      const dateObj = parseDateString(task.data_conclusao_original);
+      const taskMondayKey = getMondayOfDate(dateObj);
+      const weekStat = calculatedDelayedTasksWeekly.find(w => w.key === taskMondayKey);
+      if (weekStat) {
+        weekStat.total += 1;
+        const partnerObj = getSingularJoin(planObj?.partners);
+        const managerName = partnerObj?.gerente || 'Sem Gerente';
+        weekStat.managers[managerName] = (weekStat.managers[managerName] || 0) + 1;
+      }
+    });
+
+    setDelayedTasksStats(calculatedDelayedTasksWeekly);
+
+    const finishedPlansMap: Record<string, number> = {};
+    finishedPlansRaw.forEach(plan => {
+      if (!globalFilteredPartnerIds.has(plan.partner_id)) return;
+
+      const nonDeletedTasks = (plan.tasks || []).filter((t: any) => !t.deletada_em);
+      const todasTasksConcluidas = nonDeletedTasks.length > 0 && nonDeletedTasks.every((t: any) => t.status === 'concluida');
+
+      if (plan.ativo === false || todasTasksConcluidas) {
+        const partnerObj = getSingularJoin(plan.partners);
+        const managerName = partnerObj?.gerente || 'Sem Gerente';
+        finishedPlansMap[managerName] = (finishedPlansMap[managerName] || 0) + 1;
+      }
+    });
+
+    const calculatedFinishedPlans: FinishedPlansStat[] = Object.entries(finishedPlansMap).map(([manager, count]) => ({
+      manager,
+      count
+    })).sort((a, b) => b.count - a.count);
+
+    setFinishedPlansStats(calculatedFinishedPlans);
+
+    const tasksStatusMap: Record<string, { backlog: number; agenda: number; em_andamento: number; concluida: number; total: number }> = {};
+    
+    tasksForStatusRaw.forEach(task => {
+      const planObj = getSingularJoin(task.plans);
+      if (!planObj || !filteredPartnerIds.has(planObj.partner_id)) return;
+
+      const partnerObj = getSingularJoin(planObj?.partners);
+      const managerName = partnerObj?.gerente || 'Sem Gerente';
+      const status = task.status;
+      
+      if (!tasksStatusMap[managerName]) {
+        tasksStatusMap[managerName] = {
+          backlog: 0,
+          agenda: 0,
+          em_andamento: 0,
+          concluida: 0,
+          total: 0
+        };
+      }
+      
+      if (status === 'backlog') {
+        tasksStatusMap[managerName].backlog += 1;
+        tasksStatusMap[managerName].total += 1;
+      } else if (status === 'agenda') {
+        tasksStatusMap[managerName].agenda += 1;
+        tasksStatusMap[managerName].total += 1;
+      } else if (status === 'em_andamento') {
+        tasksStatusMap[managerName].em_andamento += 1;
+        tasksStatusMap[managerName].total += 1;
+      } else if (status === 'concluida') {
+        tasksStatusMap[managerName].concluida += 1;
+        tasksStatusMap[managerName].total += 1;
+      }
+    });
+
+    const calculatedTasksStatus: TasksStatusStat[] = Object.entries(tasksStatusMap).map(([manager, counts]) => ({
+      manager,
+      ...counts
+    })).sort((a, b) => b.total - a.total);
+
+    setTasksStatusStats(calculatedTasksStatus);
+
+    // Calculate Playbook Funnel statistics
+    const pSnapshots = partnerSnapshots || [];
+    let latestImportDate = '';
+    pSnapshots.forEach((ps: any) => {
+      if (!ps.imported_at) return;
+      const dateStr = typeof ps.imported_at === 'string' ? ps.imported_at.split('T')[0] : String(ps.imported_at).substring(0, 10);
+      if (!latestImportDate || dateStr > latestImportDate) {
+        latestImportDate = dateStr;
+      }
+    });
+
+    const latestPartnerIds = new Set<string>();
+    if (latestImportDate) {
+      pSnapshots.forEach((ps: any) => {
+        if (!ps.imported_at) return;
+        const dateStr = typeof ps.imported_at === 'string' ? ps.imported_at.split('T')[0] : String(ps.imported_at).substring(0, 10);
+        if (dateStr === latestImportDate && ps.partner_id) {
+          latestPartnerIds.add(ps.partner_id);
+        }
+      });
+    }
+
+    const funnelPartners = filteredPartners.filter((p: any) => {
+      const partnerGerenteNorm = p.gerente ? p.gerente.trim().toLowerCase() : '';
+      const hasValidGerente = partnerGerenteNorm !== '' && validUserNames.has(partnerGerenteNorm);
+      if (!hasValidGerente) return false;
+
+      if (latestPartnerIds.size > 0) {
+        return latestPartnerIds.has(p.id);
+      }
+      return true;
+    });
+    const funnelPartnerIds = new Set(funnelPartners.map((p: any) => p.id));
+    
+    // 1. Parceiros no segmento
+    const m1 = funnelPartners.length;
+
+    // 2. Parceiros com plano criado (qualquer status, histórico incluído)
+    const partnersWithPlanCreatedIds = new Set(
+      basePlans
+        .filter((p: any) => funnelPartnerIds.has(p.partner_id))
+        .map((p: any) => p.partner_id)
+    );
+    const m2 = partnersWithPlanCreatedIds.size;
+
+    // 3. Parceiros com plano ativo (plans.ativo = true)
+    const partnersWithActivePlanIds = new Set(
+      basePlans
+        .filter((p: any) => p.ativo === true && funnelPartnerIds.has(p.partner_id))
+        .map((p: any) => p.partner_id)
+    );
+    const m3 = partnersWithActivePlanIds.size;
+
+    // 4. Parceiros com plano ativo mas atrasado (subset of item 3 with at least 1 task not completed, not deleted, and past data_conclusao_original)
+    const delayedActivePlanIds = new Set(
+      tasks
+        .filter((t: any) => t.status !== 'concluida' && t.data_conclusao_original && t.data_conclusao_original < hoje)
+        .map((t: any) => t.plan_id)
+    );
+    const activePlansOfFunnelPartners = basePlans.filter((p: any) => p.ativo === true && funnelPartnerIds.has(p.partner_id));
+    const partnersWithActivePlanButDelayedIds = new Set(
+      activePlansOfFunnelPartners
+        .filter((p: any) => delayedActivePlanIds.has(p.id))
+        .map((p: any) => p.partner_id)
+    );
+    const m4 = partnersWithActivePlanButDelayedIds.size;
+
+    // 5. Parceiros com plano finalizado (at least one plan with ativo = false)
+    const finishedPartnersSet = new Set<string>();
+    basePlans.forEach((plan: any) => {
+      if (!funnelPartnerIds.has(plan.partner_id)) return;
+      if (plan.ativo === false) {
+        finishedPartnersSet.add(plan.partner_id);
+      }
+    });
+    const m5 = finishedPartnersSet.size;
+
+    setFunnelStats({ m1, m2, m3, m4, m5 });
+
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, comPlano, statusEtapaPlano, statusConclusao, selectedFila]);
+
+  const funnelLabel = useMemo(() => {
+    if (selectedPlanos.length === 0) return 'Geral';
+    if (selectedPlanos.length === 1) return selectedPlanos[0];
+    return `Segmentos selecionados (${selectedPlanos.length})`;
+  }, [selectedPlanos]);
+
+  const historicalData = useMemo(() => {
+    if (!rawData) return null;
+    const fpSnapshots = rawData.funnelPartnerSnapshots || [];
+
+    if (fpSnapshots.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    const selectedPlanosSet = new Set(selectedPlanos);
+    const selectedGerentesNormSet = new Set(
+      selectedGerentes.map(g => g.trim().toLowerCase()).filter(Boolean)
+    );
+
+    const partnerToPlansMap = new Map<string, any[]>();
+    (rawData.basePlans || []).forEach((p: any) => {
+      if (p && p.id && p.partner_id) {
+        const list = partnerToPlansMap.get(p.partner_id) || [];
+        list.push(p);
+        partnerToPlansMap.set(p.partner_id, list);
+      }
+    });
+
+    const planToTasksMap = new Map<string, any[]>();
+    (rawData.tasks || []).forEach((t: any) => {
+      if (t && t.plan_id && !t.deletada_em) {
+        const list = planToTasksMap.get(t.plan_id) || [];
+        list.push(t);
+        planToTasksMap.set(t.plan_id, list);
+      }
+    });
+
+    const playbooksNovosPartnerIds = new Set<string>();
+    (rawData.basePlans || []).forEach((p: any) => {
+      if (p.playbook_id != null && p.partner_id) {
+        playbooksNovosPartnerIds.add(p.partner_id);
+      }
+    });
+
+    const partnersWithPlanIds = new Set<string>(
+      (rawData.basePlans || []).map((p: any) => (p && p.id && p.partner_id ? p.partner_id : null)).filter(Boolean)
+    );
+
+    const partnersWithIniciadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === true && pTasks.some((t: any) => t.status === 'concluida') && !todasTasksConcluidas) {
+          partnersWithIniciadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithFinalizadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === false || todasTasksConcluidas) {
+          partnersWithFinalizadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithSucessoIds = new Set<string>();
+    const partnersWithSemSucessoIds = new Set<string>();
+    const partnersWithNaoClassificadoIds = new Set<string>();
+
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        if (p.status_conclusao === 'sucesso') {
+          partnersWithSucessoIds.add(partnerId);
+        }
+        if (p.status_conclusao === 'sem_sucesso') {
+          partnersWithSemSucessoIds.add(partnerId);
+        }
+        const pTasks = planToTasksMap.get(p.id) || [];
+        if (
+          pTasks.length > 0 &&
+          pTasks.every((t: any) => t.status === 'concluida') &&
+          (!p.status_conclusao || p.status_conclusao === '')
+        ) {
+          partnersWithNaoClassificadoIds.add(partnerId);
+        }
+      }
+    });
+
+    const partnerFilaMap = new Map<string, string>(
+      (rawData.partners || []).map((p: any) => [p.id, p.fila]).filter(([id]) => Boolean(id))
+    );
+
+    const filteredRows = fpSnapshots.filter((s: any) => {
+      // Ocultar a semana 2026-07-27 (primeiro snapshot, considerado incompleto)
+      const rawSemana = s.semana;
+      if (rawSemana) {
+        const semanaKey = typeof rawSemana === 'string' ? rawSemana.split('T')[0] : String(rawSemana).substring(0, 10);
+        if (semanaKey === '2026-07-27') {
+          return false;
+        }
+      }
+
+      // 1. Plano/Segmento filter
+      if (selectedPlanosSet.size > 0) {
+        if (!s.segmento || !selectedPlanosSet.has(s.segmento)) {
+          return false;
+        }
+      }
+
+      // 2. Gerente filter
+      if (selectedGerentesNormSet.size > 0) {
+        const rowGerenteNorm = (s.gerente || '').trim().toLowerCase();
+        if (!rowGerenteNorm || !selectedGerentesNormSet.has(rowGerenteNorm)) {
+          return false;
+        }
+      }
+
+      // 3. Origem do Playbook filter
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!s.partner_id || !playbooksNovosPartnerIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (s.partner_id && playbooksNovosPartnerIds.has(s.partner_id)) {
+          return false;
+        }
+      }
+
+      // 4. Com Plano / Status do Plano filter
+      if (comPlano === 'com_plano') {
+        if (!s.partner_id || !partnersWithPlanIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (comPlano === 'sem_plano') {
+        if (s.partner_id && partnersWithPlanIds.has(s.partner_id)) {
+          return false;
+        }
+      }
+
+      if (statusEtapaPlano === 'iniciado') {
+        if (!s.partner_id || !partnersWithIniciadoIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!s.partner_id || !partnersWithFinalizadoIds.has(s.partner_id)) {
+          return false;
+        }
+      }
+
+      // 5. Status de Conclusão filter
+      if (statusConclusao === 'sucesso') {
+        if (!s.partner_id || !partnersWithSucessoIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (!s.partner_id || !partnersWithSemSucessoIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (statusConclusao === 'nao_classificado') {
+        if (!s.partner_id || !partnersWithNaoClassificadoIds.has(s.partner_id)) {
+          return false;
+        }
+      }
+
+      // 6. Fila filter
+      if (selectedFila !== 'todos') {
+        const partnerFila = partnerFilaMap.get(s.partner_id);
+        if (partnerFila !== selectedFila) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    if (filteredRows.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    // Group by semana
+    const weekMap = new Map<string, {
+      parceirosNoSegmentoSet: Set<string>;
+      parceirosComPlanoCriadoSet: Set<string>;
+      parceirosFinalizadoSet: Set<string>;
+    }>();
+
+    filteredRows.forEach((s: any) => {
+      const rawSemana = s.semana;
+      if (!rawSemana) return;
+      const semanaKey = typeof rawSemana === 'string' ? rawSemana.split('T')[0] : String(rawSemana).substring(0, 10);
+
+      if (!weekMap.has(semanaKey)) {
+        weekMap.set(semanaKey, {
+          parceirosNoSegmentoSet: new Set(),
+          parceirosComPlanoCriadoSet: new Set(),
+          parceirosFinalizadoSet: new Set()
+        });
+      }
+
+      const weekEntry = weekMap.get(semanaKey)!;
+      if (s.partner_id) {
+        weekEntry.parceirosNoSegmentoSet.add(s.partner_id);
+        if (s.tem_plano_criado === true || s.tem_plano_criado === 'true') {
+          weekEntry.parceirosComPlanoCriadoSet.add(s.partner_id);
+        }
+        if (s.tem_plano_finalizado === true || s.tem_plano_finalizado === 'true') {
+          weekEntry.parceirosFinalizadoSet.add(s.partner_id);
+        }
+      }
+    });
+
+    const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a.localeCompare(b));
+
+    if (sortedWeeks.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    const columns = sortedWeeks.map(semanaKey => {
+      const entry = weekMap.get(semanaKey)!;
+      return {
+        semana: semanaKey,
+        parceiros_no_segmento: entry.parceirosNoSegmentoSet.size,
+        parceiros_com_plano_criado: entry.parceirosComPlanoCriadoSet.size,
+        parceiros_finalizado: entry.parceirosFinalizadoSet.size
+      };
+    });
+
+    return { status: 'ok' as const, data: columns };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, comPlano, statusEtapaPlano, statusConclusao, selectedFila]);
+
+  const licenseCoverageData = useMemo(() => {
+    if (!rawData) return { status: 'loading' as const, data: [] };
+    const fpSnapshots = rawData.funnelPartnerSnapshots || [];
+    const pSnapshots = rawData.partnerSnapshots || [];
+
+    if (fpSnapshots.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    const selectedPlanosSet = new Set(selectedPlanos);
+    const selectedGerentesNormSet = new Set(
+      selectedGerentes.map(g => g.trim().toLowerCase()).filter(Boolean)
+    );
+    const playbooksNovosPartnerIds = new Set<string>();
+    (rawData.basePlans || []).forEach((p: any) => {
+      if (p.playbook_id != null && p.partner_id) {
+        playbooksNovosPartnerIds.add(p.partner_id);
+      }
+    });
+    const partnersWithPlanIds = new Set<string>(
+      (rawData.basePlans || []).map((p: any) => p.partner_id).filter(Boolean)
+    );
+    const partnerFilaMap = new Map<string, string>(
+      (rawData.partners || []).map((p: any) => [p.id, p.fila]).filter(([id]) => Boolean(id))
+    );
+
+    // Filter by Segmento, Gerente and Origem do Playbook (ignores global planoExistente)
+    const filteredRows = fpSnapshots.filter((s: any) => {
+      // Ocultar a semana 2026-07-27 (primeiro snapshot, considerado incompleto)
+      const rawSemana = s.semana;
+      if (rawSemana) {
+        const semanaKey = typeof rawSemana === 'string' ? rawSemana.split('T')[0] : String(rawSemana).substring(0, 10);
+        if (semanaKey === '2026-07-27') {
+          return false;
+        }
+      }
+
+      if (selectedPlanosSet.size > 0) {
+        if (!s.segmento || !selectedPlanosSet.has(s.segmento)) {
+          return false;
+        }
+      }
+
+      if (selectedGerentesNormSet.size > 0) {
+        const rowGerenteNorm = (s.gerente || '').trim().toLowerCase();
+        if (!rowGerenteNorm || !selectedGerentesNormSet.has(rowGerenteNorm)) {
+          return false;
+        }
+      }
+
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!s.partner_id || !playbooksNovosPartnerIds.has(s.partner_id)) {
+          return false;
+        }
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (s.partner_id && playbooksNovosPartnerIds.has(s.partner_id)) {
+          return false;
+        }
+      }
+
+      if (selectedFila !== 'todos') {
+        const partnerFila = partnerFilaMap.get(s.partner_id);
+        if (partnerFila !== selectedFila) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    if (filteredRows.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    // Pre-process partner_snapshots: group by partner_id and sort by imported_at asc
+    const snapshotsByPartner = new Map<string, Array<{
+      importedAtDateStr: string;
+      licencas: number;
+      licencas_engajadas: number;
+    }>>();
+
+    pSnapshots.forEach((ps: any) => {
+      if (!ps.partner_id || !ps.imported_at) return;
+      const dateStr = typeof ps.imported_at === 'string'
+        ? ps.imported_at.split('T')[0]
+        : String(ps.imported_at).substring(0, 10);
+
+      const list = snapshotsByPartner.get(ps.partner_id) || [];
+      list.push({
+        importedAtDateStr: dateStr,
+        licencas: Number(ps.licencas) || 0,
+        licencas_engajadas: Number(ps.licencas_engajadas) || 0
+      });
+      snapshotsByPartner.set(ps.partner_id, list);
+    });
+
+    snapshotsByPartner.forEach((list) => {
+      list.sort((a, b) => a.importedAtDateStr.localeCompare(b.importedAtDateStr));
+    });
+
+    // Group filteredRows by semana into two Sets of partner_ids: Com Plano vs Sem Plano
+    const weekMapCom = new Map<string, Set<string>>();
+    const weekMapSem = new Map<string, Set<string>>();
+    const allWeeksSet = new Set<string>();
+
+    filteredRows.forEach((s: any) => {
+      const rawSemana = s.semana;
+      if (!rawSemana || !s.partner_id) return;
+      const semanaKey = typeof rawSemana === 'string' ? rawSemana.split('T')[0] : String(rawSemana).substring(0, 10);
+
+      allWeeksSet.add(semanaKey);
+
+      if (partnersWithPlanIds.has(s.partner_id)) {
+        if (!weekMapCom.has(semanaKey)) weekMapCom.set(semanaKey, new Set());
+        weekMapCom.get(semanaKey)!.add(s.partner_id);
+      } else {
+        if (!weekMapSem.has(semanaKey)) weekMapSem.set(semanaKey, new Set());
+        weekMapSem.get(semanaKey)!.add(s.partner_id);
+      }
+    });
+
+    const sortedWeeks = Array.from(allWeeksSet).sort((a, b) => a.localeCompare(b));
+
+    if (sortedWeeks.length === 0) {
+      return { status: 'empty' as const, data: [] };
+    }
+
+    const columns = sortedWeeks.map(semanaKey => {
+      const comPartnerIds = weekMapCom.get(semanaKey) || new Set();
+      const semPartnerIds = weekMapSem.get(semanaKey) || new Set();
+
+      // Calculation for Com Plano
+      let totalCobertasCom = 0;
+      let totalEngajadasCom = 0;
+      comPartnerIds.forEach(partnerId => {
+        const partnerSnaps = snapshotsByPartner.get(partnerId);
+        if (!partnerSnaps || partnerSnaps.length === 0) return;
+        let validSnap: { licencas: number; licencas_engajadas: number } | null = null;
+        for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+          if (partnerSnaps[i].importedAtDateStr <= semanaKey) {
+            validSnap = partnerSnaps[i];
+            break;
+          }
+        }
+        if (validSnap) {
+          totalCobertasCom += validSnap.licencas;
+          totalEngajadasCom += validSnap.licencas_engajadas;
+        }
+      });
+      const desengajadasCom = totalCobertasCom - totalEngajadasCom;
+      const taxaEngajamentoCom = totalCobertasCom > 0 ? (totalEngajadasCom / totalCobertasCom) * 100 : null;
+
+      // Calculation for Sem Plano
+      let totalCobertasSem = 0;
+      let totalEngajadasSem = 0;
+      semPartnerIds.forEach(partnerId => {
+        const partnerSnaps = snapshotsByPartner.get(partnerId);
+        if (!partnerSnaps || partnerSnaps.length === 0) return;
+        let validSnap: { licencas: number; licencas_engajadas: number } | null = null;
+        for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+          if (partnerSnaps[i].importedAtDateStr <= semanaKey) {
+            validSnap = partnerSnaps[i];
+            break;
+          }
+        }
+        if (validSnap) {
+          totalCobertasSem += validSnap.licencas;
+          totalEngajadasSem += validSnap.licencas_engajadas;
+        }
+      });
+      const desengajadasSem = totalCobertasSem - totalEngajadasSem;
+      const taxaEngajamentoSem = totalCobertasSem > 0 ? (totalEngajadasSem / totalCobertasSem) * 100 : null;
+
+      // Total (Com + Sem)
+      const totalCobertasTotal = totalCobertasCom + totalCobertasSem;
+      const totalEngajadasTotal = totalEngajadasCom + totalEngajadasSem;
+      const desengajadasTotal = totalCobertasTotal - totalEngajadasTotal;
+      const taxaEngajamentoTotal = totalCobertasTotal > 0 ? (totalEngajadasTotal / totalCobertasTotal) * 100 : null;
+
+      return {
+        semana: semanaKey,
+        licencas_cobertas_total: totalCobertasTotal,
+        licencas_cobertas_com: totalCobertasCom,
+        licencas_cobertas_sem: totalCobertasSem,
+        licencas_desengajadas_total: desengajadasTotal < 0 ? 0 : desengajadasTotal,
+        licencas_desengajadas_com: desengajadasCom < 0 ? 0 : desengajadasCom,
+        licencas_desengajadas_sem: desengajadasSem < 0 ? 0 : desengajadasSem,
+        taxa_engajamento_total: taxaEngajamentoTotal,
+        taxa_engajamento_com: taxaEngajamentoCom,
+        taxa_engajamento_sem: taxaEngajamentoSem,
+      };
+    });
+
+    return { status: 'ok' as const, data: columns };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, selectedFila]);
+
+  const cohortEngagementData = useMemo(() => {
+    if (!rawData) return { status: 'loading' as const, cohorts: [] };
+
+    const { partners = [], basePlans = [], partnerSnapshots = [], tasks = [], managersList = [] } = rawData;
+
+    if (comPlano === 'sem_plano') {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    // Helper: calculate Monday of ISO week for a YYYY-MM-DD date string
+    const getMondayOfWeek = (dateStr: string) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr + 'T00:00:00Z');
+      if (isNaN(d.getTime())) return '';
+      const day = d.getUTCDay();
+      const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff));
+      return monday.toISOString().split('T')[0];
+    };
+
+    // Helper: add days to YYYY-MM-DD date string
+    const addDays = (dateStr: string, days: number): string => {
+      const d = new Date(dateStr + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().split('T')[0];
+    };
+
+    // Map partners for fast lookup
+    const partnerMap = new Map<string, any>();
+    (partners || []).forEach((pt: any) => {
+      if (pt && pt.id) {
+        partnerMap.set(pt.id, pt);
+      }
+    });
+
+    // Map manager names
+    const managerMap = new Map<string, string>();
+    (managersList || []).forEach((m: any) => {
+      if (m && m.id) {
+        managerMap.set(m.id, m.nome || 'Sem Gerente');
+      }
+    });
+
+    // Group non-deleted tasks by plan_id
+    const tasksByPlan = new Map<string, any[]>();
+    (tasks || []).forEach((t: any) => {
+      if (!t.plan_id || t.deletada_em) return;
+      const list = tasksByPlan.get(t.plan_id) || [];
+      list.push(t);
+      tasksByPlan.set(t.plan_id, list);
+    });
+
+    // Pre-process partner_snapshots by partner_id sorted by imported_at
+    const snapshotsByPartner = new Map<string, Array<{
+      importedAtDateStr: string;
+      licencas: number;
+      licencas_engajadas: number;
+      plano: string | null;
+    }>>();
+
+    (partnerSnapshots || []).forEach((ps: any) => {
+      if (!ps.partner_id || !ps.imported_at) return;
+      const dateStr = typeof ps.imported_at === 'string'
+        ? ps.imported_at.split('T')[0]
+        : String(ps.imported_at).substring(0, 10);
+
+      const list = snapshotsByPartner.get(ps.partner_id) || [];
+      list.push({
+        importedAtDateStr: dateStr,
+        licencas: Number(ps.licencas) || 0,
+        licencas_engajadas: Number(ps.licencas_engajadas) || 0,
+        plano: ps.plano ? String(ps.plano).trim() : null
+      });
+      snapshotsByPartner.set(ps.partner_id, list);
+    });
+
+    snapshotsByPartner.forEach((list) => {
+      list.sort((a, b) => a.importedAtDateStr.localeCompare(b.importedAtDateStr));
+    });
+
+    // Helper to get partner's locked historical plano at S0
+    const getPartnerPlanoAtS0 = (partnerId: string, semanaEntrada: string): string | null => {
+      const partnerSnaps = snapshotsByPartner.get(partnerId);
+      if (!partnerSnaps || partnerSnaps.length === 0) return null;
+      const dataRefS0 = addDays(semanaEntrada, 6);
+      let validSnap: { plano: string | null } | null = null;
+      for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+        if (partnerSnaps[i].importedAtDateStr <= dataRefS0) {
+          validSnap = partnerSnaps[i];
+          break;
+        }
+      }
+      return validSnap?.plano || null;
+    };
+
+    // Filter basePlans directly and determine each plan's entry date for selected mode
+    const planEntries: Array<{ planId: string; partnerId: string; entryDate: string; semanaEntrada: string }> = [];
+
+    (basePlans || []).forEach((p: any) => {
+      if (!p || !p.partner_id) return;
+
+      const partner = partnerMap.get(p.partner_id);
+      if (!partner) return;
+
+      // 2. Filter by Gerente
+      if (selectedGerentes.length > 0) {
+        const managerName = managerMap.get(partner.gerente_id) || 'Sem Gerente';
+        if (!selectedGerentes.includes(managerName)) return;
+      }
+
+      // 3. Filter by Origem do Playbook (applied directly to plan's playbook_id)
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (p.playbook_id == null) return;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (p.playbook_id != null) return;
+      }
+
+      // 4. Filter by Fila
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return;
+      }
+
+      // 5. Filter by statusEtapaPlano (eligibility filter)
+      const planTasks = tasksByPlan.get(p.id) || [];
+      const todasTasksConcluidas = planTasks.length > 0 && planTasks.every((t: any) => t.status === 'concluida');
+      const hasCompletedTask = planTasks.some((t: any) => t.status === 'concluida');
+
+      if (statusEtapaPlano === 'iniciado') {
+        if (!(p.ativo === true && hasCompletedTask && !todasTasksConcluidas)) return;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!(p.ativo === false || todasTasksConcluidas)) return;
+      }
+
+      // 6. Filter by statusConclusao (eligibility filter)
+      if (statusConclusao === 'sucesso') {
+        if (p.status_conclusao !== 'sucesso') return;
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (p.status_conclusao !== 'sem_sucesso') return;
+      } else if (statusConclusao === 'nao_classificado') {
+        const planTasks = tasksByPlan.get(p.id) || [];
+        const isCompleted = planTasks.length > 0 && planTasks.every((t: any) => t.status === 'concluida');
+        const hasNoClassification = !p.status_conclusao || p.status_conclusao === '';
+        if (!(isCompleted && hasNoClassification)) return;
+      }
+
+      // Entry date is ALWAYS plans.created_at
+      if (!p.created_at) return;
+      const entryDate = typeof p.created_at === 'string' ? p.created_at.split('T')[0] : String(p.created_at).substring(0, 10);
+      if (!entryDate) return;
+
+      const semanaEntrada = getMondayOfWeek(entryDate);
+      if (!semanaEntrada) return;
+
+      // 1. Filter by Plano (Segmento) - Histórico travado no snapshot de S0
+      if (selectedPlanos.length > 0) {
+        const planoS0 = getPartnerPlanoAtS0(p.partner_id, semanaEntrada);
+        if (!planoS0 || !selectedPlanos.includes(planoS0)) return;
+      }
+
+      planEntries.push({
+        planId: p.id,
+        partnerId: p.partner_id,
+        entryDate,
+        semanaEntrada
+      });
+    });
+
+    if (planEntries.length === 0) {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    // Group plan entries by Monday of ISO week
+    const cohortMap = new Map<string, Array<{ planId: string; partnerId: string }>>();
+    planEntries.forEach((entry) => {
+      const monday = entry.semanaEntrada;
+      const list = cohortMap.get(monday) || [];
+      list.push({ planId: entry.planId, partnerId: entry.partnerId });
+      cohortMap.set(monday, list);
+    });
+
+    const sortedCohortWeeks = Array.from(cohortMap.keys()).sort((a, b) => a.localeCompare(b));
+
+    if (sortedCohortWeeks.length === 0) {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    const hojeStr = new Date().toISOString().split('T')[0];
+
+    const diffDaysBetween = (startStr: string, endStr: string): number => {
+      const d1 = new Date(startStr + 'T00:00:00Z');
+      const d2 = new Date(endStr + 'T00:00:00Z');
+      return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+    };
+
+    const maxWeeksAvailable = Math.max(
+      8,
+      ...sortedCohortWeeks.map((w) => Math.max(0, Math.floor(diffDaysBetween(w, hojeStr) / 7)))
+    );
+
+    const cohorts = sortedCohortWeeks.map((semanaEntrada) => {
+      const cohortPlans = cohortMap.get(semanaEntrada)!;
+      const parts = semanaEntrada.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : semanaEntrada;
+      const planCount = cohortPlans.length;
+      const label = formattedDate;
+
+      // Calculate total licencas cobertas for plans in this cohort using the most recent available snapshot
+      let totalLicencas = 0;
+      cohortPlans.forEach((item) => {
+        const partnerSnaps = snapshotsByPartner.get(item.partnerId);
+        if (partnerSnaps && partnerSnaps.length > 0) {
+          let latestSnap = partnerSnaps[partnerSnaps.length - 1];
+          for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+            if (partnerSnaps[i].importedAtDateStr <= hojeStr) {
+              latestSnap = partnerSnaps[i];
+              break;
+            }
+          }
+          totalLicencas += (latestSnap.licencas || 0);
+        }
+      });
+
+      const weeksData: Array<{ weekIndex: number; avgEngagement: number | null; sumEngajadas: number; sumLicencas: number }> = [];
+      for (let N = 0; N <= maxWeeksAvailable; N++) {
+        const dataReferencia = N === 0 ? addDays(semanaEntrada, 6) : addDays(semanaEntrada, N * 7);
+        if (hojeStr < (N === 0 ? semanaEntrada : dataReferencia)) {
+          weeksData.push({ weekIndex: N, avgEngagement: null, sumEngajadas: 0, sumLicencas: 0 });
+        } else {
+          let sumEngajadas = 0;
+          let sumLicencas = 0;
+
+          cohortPlans.forEach((item) => {
+            const partnerSnaps = snapshotsByPartner.get(item.partnerId);
+            if (!partnerSnaps || partnerSnaps.length === 0) return;
+
+            let validSnap: { licencas: number; licencas_engajadas: number } | null = null;
+            for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+              if (partnerSnaps[i].importedAtDateStr <= dataReferencia) {
+                validSnap = partnerSnaps[i];
+                break;
+              }
+            }
+
+            if (validSnap) {
+              sumEngajadas += (validSnap.licencas_engajadas || 0);
+              sumLicencas += (validSnap.licencas || 0);
+            }
+          });
+
+          const avg = sumLicencas > 0 ? (sumEngajadas / sumLicencas) * 100 : null;
+          weeksData.push({ weekIndex: N, avgEngagement: avg, sumEngajadas, sumLicencas });
+        }
+      }
+
+      return {
+        semanaEntrada,
+        label,
+        rawDateString: semanaEntrada,
+        planCount,
+        totalLicencas,
+        weeksData
+      };
+    });
+
+    // Calculation of per-column averages for 4-week and 12-week summaries
+    const calculateColumnBasedAverages = (maxCount: number) => {
+      const sortedCohorts = [...cohorts].sort((a, b) => a.rawDateString.localeCompare(b.rawDateString));
+      const averages: (number | null)[] = [];
+      const usedCohortsSet = new Set<string>();
+
+      for (let wIdx = 0; wIdx <= maxWeeksAvailable; wIdx++) {
+        const validCohorts = sortedCohorts.filter(c => {
+          const val = c.weeksData[wIdx]?.avgEngagement;
+          return val !== null && val !== undefined;
+        });
+
+        const lastNCohorts = validCohorts.slice(-maxCount);
+
+        if (lastNCohorts.length === 0) {
+          averages.push(null);
+        } else {
+          const totalEngajadas = lastNCohorts.reduce((acc, c) => acc + (c.weeksData[wIdx].sumEngajadas || 0), 0);
+          const totalLicencas = lastNCohorts.reduce((acc, c) => acc + (c.weeksData[wIdx].sumLicencas || 0), 0);
+          if (totalLicencas > 0) {
+            const pct = (totalEngajadas / totalLicencas) * 100;
+            averages.push(Number(pct.toFixed(1)));
+          } else {
+            averages.push(null);
+          }
+          lastNCohorts.forEach(c => usedCohortsSet.add(c.rawDateString));
+        }
+      }
+
+      if (usedCohortsSet.size === 0) {
+        return {
+          rangeLabel: '',
+          planCountSum: 0,
+          totalLicencasSum: 0,
+          averages,
+          count: 0
+        };
+      }
+
+      const usedCohortsList = sortedCohorts.filter(c => usedCohortsSet.has(c.rawDateString));
+      const firstDate = formatCohortWeekLabel(usedCohortsList[0].rawDateString);
+      const lastDate = formatCohortWeekLabel(usedCohortsList[usedCohortsList.length - 1].rawDateString);
+      const rangeLabel = `(${firstDate} a ${lastDate})`;
+
+      const planCountSum = usedCohortsList.reduce((acc, c) => acc + c.planCount, 0);
+      const totalLicencasSum = usedCohortsList.reduce((acc, c) => acc + c.totalLicencas, 0);
+
+      return {
+        rangeLabel,
+        planCountSum,
+        totalLicencasSum,
+        averages,
+        count: usedCohortsList.length
+      };
+    };
+
+    const summary4Weeks = calculateColumnBasedAverages(4);
+    const summary12Weeks = calculateColumnBasedAverages(12);
+
+    return {
+      status: 'ok' as const,
+      cohorts,
+      maxWeeks: maxWeeksAvailable,
+      summary4Weeks,
+      summary12Weeks
+    };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, selectedFila, comPlano, statusEtapaPlano, statusConclusao]);
+
+  // Coorte de Licenças (Total somado de licenças por safra ao longo das semanas S0-S8)
+  const cohortLicencasData = useMemo(() => {
+    if (!rawData) return { status: 'loading' as const, cohorts: [] };
+
+    const { partners = [], basePlans = [], partnerSnapshots = [], tasks = [], managersList = [] } = rawData;
+
+    if (comPlano === 'sem_plano') {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    // Helper: calculate Monday of ISO week for a YYYY-MM-DD date string
+    const getMondayOfWeek = (dateStr: string) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr + 'T00:00:00Z');
+      if (isNaN(d.getTime())) return '';
+      const day = d.getUTCDay();
+      const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff));
+      return monday.toISOString().split('T')[0];
+    };
+
+    // Helper: add days to YYYY-MM-DD date string
+    const addDays = (dateStr: string, days: number): string => {
+      const d = new Date(dateStr + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().split('T')[0];
+    };
+
+    // Map partners for fast lookup
+    const partnerMap = new Map<string, any>();
+    (partners || []).forEach((pt: any) => {
+      if (pt && pt.id) {
+        partnerMap.set(pt.id, pt);
+      }
+    });
+
+    // Map manager names
+    const managerMap = new Map<string, string>();
+    (managersList || []).forEach((m: any) => {
+      if (m && m.id) {
+        managerMap.set(m.id, m.nome || 'Sem Gerente');
+      }
+    });
+
+    // Group non-deleted tasks by plan_id
+    const tasksByPlan = new Map<string, any[]>();
+    (tasks || []).forEach((t: any) => {
+      if (!t.plan_id || t.deletada_em) return;
+      const list = tasksByPlan.get(t.plan_id) || [];
+      list.push(t);
+      tasksByPlan.set(t.plan_id, list);
+    });
+
+    // Pre-process partner_snapshots by partner_id sorted by imported_at
+    const snapshotsByPartner = new Map<string, Array<{
+      importedAtDateStr: string;
+      licencas: number;
+      plano: string | null;
+    }>>();
+
+    (partnerSnapshots || []).forEach((ps: any) => {
+      if (!ps.partner_id || !ps.imported_at) return;
+      const dateStr = typeof ps.imported_at === 'string'
+        ? ps.imported_at.split('T')[0]
+        : String(ps.imported_at).substring(0, 10);
+
+      const list = snapshotsByPartner.get(ps.partner_id) || [];
+      list.push({
+        importedAtDateStr: dateStr,
+        licencas: Number(ps.licencas) || 0,
+        plano: ps.plano ? String(ps.plano).trim() : null
+      });
+      snapshotsByPartner.set(ps.partner_id, list);
+    });
+
+    snapshotsByPartner.forEach((list) => {
+      list.sort((a, b) => a.importedAtDateStr.localeCompare(b.importedAtDateStr));
+    });
+
+    // Helper to get partner's locked historical plano at S0
+    const getPartnerPlanoAtS0 = (partnerId: string, semanaEntrada: string): string | null => {
+      const partnerSnaps = snapshotsByPartner.get(partnerId);
+      if (!partnerSnaps || partnerSnaps.length === 0) return null;
+      const dataRefS0 = addDays(semanaEntrada, 6);
+      let validSnap: { plano: string | null } | null = null;
+      for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+        if (partnerSnaps[i].importedAtDateStr <= dataRefS0) {
+          validSnap = partnerSnaps[i];
+          break;
+        }
+      }
+      return validSnap?.plano || null;
+    };
+
+    // Filter basePlans directly and determine each plan's entry date
+    const planEntries: Array<{ planId: string; partnerId: string; entryDate: string; semanaEntrada: string }> = [];
+
+    (basePlans || []).forEach((p: any) => {
+      if (!p || !p.partner_id) return;
+
+      const partner = partnerMap.get(p.partner_id);
+      if (!partner) return;
+
+      // 2. Filter by Gerente
+      if (selectedGerentes.length > 0) {
+        const managerName = managerMap.get(partner.gerente_id) || 'Sem Gerente';
+        if (!selectedGerentes.includes(managerName)) return;
+      }
+
+      // 3. Filter by Origem do Playbook
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (p.playbook_id == null) return;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (p.playbook_id != null) return;
+      }
+
+      // 4. Filter by Fila
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return;
+      }
+
+      // 5. Filter by statusEtapaPlano
+      const planTasks = tasksByPlan.get(p.id) || [];
+      const todasTasksConcluidas = planTasks.length > 0 && planTasks.every((t: any) => t.status === 'concluida');
+      const hasCompletedTask = planTasks.some((t: any) => t.status === 'concluida');
+
+      if (statusEtapaPlano === 'iniciado') {
+        if (!(p.ativo === true && hasCompletedTask && !todasTasksConcluidas)) return;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!(p.ativo === false || todasTasksConcluidas)) return;
+      }
+
+      // 6. Filter by statusConclusao
+      if (statusConclusao === 'sucesso') {
+        if (p.status_conclusao !== 'sucesso') return;
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (p.status_conclusao !== 'sem_sucesso') return;
+      } else if (statusConclusao === 'nao_classificado') {
+        const isCompleted = planTasks.length > 0 && planTasks.every((t: any) => t.status === 'concluida');
+        const hasNoClassification = !p.status_conclusao || p.status_conclusao === '';
+        if (!(isCompleted && hasNoClassification)) return;
+      }
+
+      // Entry date is ALWAYS plans.created_at
+      if (!p.created_at) return;
+      const entryDate = typeof p.created_at === 'string' ? p.created_at.split('T')[0] : String(p.created_at).substring(0, 10);
+      if (!entryDate) return;
+
+      const semanaEntrada = getMondayOfWeek(entryDate);
+      if (!semanaEntrada) return;
+
+      // 1. Filter by Plano (Segmento) - Histórico travado no snapshot de S0
+      if (selectedPlanos.length > 0) {
+        const planoS0 = getPartnerPlanoAtS0(p.partner_id, semanaEntrada);
+        if (!planoS0 || !selectedPlanos.includes(planoS0)) return;
+      }
+
+      planEntries.push({
+        planId: p.id,
+        partnerId: p.partner_id,
+        entryDate,
+        semanaEntrada
+      });
+    });
+
+    if (planEntries.length === 0) {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    // Group plan entries by Monday of ISO week
+    const cohortMap = new Map<string, Array<{ planId: string; partnerId: string }>>();
+    planEntries.forEach((entry) => {
+      const monday = entry.semanaEntrada;
+      const list = cohortMap.get(monday) || [];
+      list.push({ planId: entry.planId, partnerId: entry.partnerId });
+      cohortMap.set(monday, list);
+    });
+
+    const DATA_CORTE_SNAPSHOTS = '2026-05-11';
+    const sortedCohortWeeks = Array.from(cohortMap.keys())
+      .filter((semana) => semana >= DATA_CORTE_SNAPSHOTS)
+      .sort((a, b) => a.localeCompare(b));
+
+    if (sortedCohortWeeks.length === 0) {
+      return { status: 'empty' as const, cohorts: [] };
+    }
+
+    const hojeStr = new Date().toISOString().split('T')[0];
+
+    const diffDaysBetween = (startStr: string, endStr: string): number => {
+      const d1 = new Date(startStr + 'T00:00:00Z');
+      const d2 = new Date(endStr + 'T00:00:00Z');
+      return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+    };
+
+    const maxWeeksAvailable = Math.max(
+      8,
+      ...sortedCohortWeeks.map((w) => Math.max(0, Math.floor(diffDaysBetween(w, hojeStr) / 7)))
+    );
+
+    const cohorts = sortedCohortWeeks.map((semanaEntrada) => {
+      const cohortPlans = cohortMap.get(semanaEntrada)!;
+      const parts = semanaEntrada.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : semanaEntrada;
+      const planCount = cohortPlans.length;
+      const label = formattedDate;
+
+      // Calculate total licencas cobertas for plans in this cohort using the most recent available snapshot
+      let totalLicencas = 0;
+      cohortPlans.forEach((item) => {
+        const partnerSnaps = snapshotsByPartner.get(item.partnerId);
+        if (partnerSnaps && partnerSnaps.length > 0) {
+          let latestSnap = partnerSnaps[partnerSnaps.length - 1];
+          for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+            if (partnerSnaps[i].importedAtDateStr <= hojeStr) {
+              latestSnap = partnerSnaps[i];
+              break;
+            }
+          }
+          totalLicencas += (latestSnap.licencas || 0);
+        }
+      });
+
+      const weeksData: Array<{ weekIndex: number; sumLicencas: number | null }> = [];
+      for (let N = 0; N <= maxWeeksAvailable; N++) {
+        const dataReferencia = N === 0 ? addDays(semanaEntrada, 6) : addDays(semanaEntrada, N * 7);
+        if (hojeStr < (N === 0 ? semanaEntrada : dataReferencia)) {
+          weeksData.push({ weekIndex: N, sumLicencas: null });
+        } else {
+          let sumLicencas = 0;
+          let hasAnySnapshot = false;
+
+          cohortPlans.forEach((item) => {
+            const partnerSnaps = snapshotsByPartner.get(item.partnerId);
+            if (!partnerSnaps || partnerSnaps.length === 0) return;
+
+            let validSnap: { licencas: number } | null = null;
+            for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+              if (partnerSnaps[i].importedAtDateStr <= dataReferencia) {
+                validSnap = partnerSnaps[i];
+                break;
+              }
+            }
+
+            if (validSnap) {
+              sumLicencas += (validSnap.licencas || 0);
+              hasAnySnapshot = true;
+            }
+          });
+
+          weeksData.push({ weekIndex: N, sumLicencas: hasAnySnapshot ? sumLicencas : 0 });
+        }
+      }
+
+      return {
+        semanaEntrada,
+        label,
+        rawDateString: semanaEntrada,
+        planCount,
+        totalLicencas,
+        weeksData
+      };
+    });
+
+    // Calculation of per-column averages for 4-week and 12-week summaries
+    // A média por coluna é a média aritmética dos totais somados das últimas N safras com dado válido
+    const calculateColumnBasedAverages = (maxCount: number) => {
+      const sortedCohorts = [...cohorts].sort((a, b) => a.rawDateString.localeCompare(b.rawDateString));
+      const averages: (number | null)[] = [];
+      const usedCohortsSet = new Set<string>();
+
+      for (let wIdx = 0; wIdx <= maxWeeksAvailable; wIdx++) {
+        const validCohorts = sortedCohorts.filter(c => {
+          const val = c.weeksData[wIdx]?.sumLicencas;
+          return val !== null && val !== undefined;
+        });
+
+        const lastNCohorts = validCohorts.slice(-maxCount);
+
+        if (lastNCohorts.length === 0) {
+          averages.push(null);
+        } else {
+          const sumOfTotals = lastNCohorts.reduce((acc, c) => acc + (c.weeksData[wIdx].sumLicencas || 0), 0);
+          const avg = sumOfTotals / lastNCohorts.length;
+          averages.push(Math.round(avg));
+          lastNCohorts.forEach(c => usedCohortsSet.add(c.rawDateString));
+        }
+      }
+
+      if (usedCohortsSet.size === 0) {
+        return {
+          rangeLabel: '',
+          planCountSum: 0,
+          totalLicencasSum: 0,
+          averages,
+          count: 0
+        };
+      }
+
+      const usedCohortsList = sortedCohorts.filter(c => usedCohortsSet.has(c.rawDateString));
+      const firstDate = formatCohortWeekLabel(usedCohortsList[0].rawDateString);
+      const lastDate = formatCohortWeekLabel(usedCohortsList[usedCohortsList.length - 1].rawDateString);
+      const rangeLabel = `(${firstDate} a ${lastDate})`;
+
+      const planCountSum = usedCohortsList.reduce((acc, c) => acc + c.planCount, 0);
+      const totalLicencasSum = usedCohortsList.reduce((acc, c) => acc + c.totalLicencas, 0);
+
+      return {
+        rangeLabel,
+        planCountSum,
+        totalLicencasSum,
+        averages,
+        count: usedCohortsList.length
+      };
+    };
+
+    const summary4Weeks = calculateColumnBasedAverages(4);
+    const summary12Weeks = calculateColumnBasedAverages(12);
+
+    return {
+      status: 'ok' as const,
+      cohorts,
+      maxWeeks: maxWeeksAvailable,
+      summary4Weeks,
+      summary12Weeks
+    };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, selectedFila, comPlano, statusEtapaPlano, statusConclusao]);
+
+  // Coorte de Diagnóstico de Engajamento (Derivada de cohortEngagementData e cohortLicencasData)
+  const cohortDiagnosticoData = useMemo(() => {
+    if (cohortEngagementData.status === 'loading' || cohortLicencasData.status === 'loading') {
+      return { status: 'loading' as const, cohorts: [], maxWeeks: 8 };
+    }
+    if (
+      cohortEngagementData.status === 'empty' ||
+      cohortLicencasData.status === 'empty' ||
+      cohortEngagementData.cohorts.length === 0
+    ) {
+      return { status: 'empty' as const, cohorts: [], maxWeeks: 8 };
+    }
+
+    const maxWeeks = Math.max(cohortEngagementData.maxWeeks ?? 8, cohortLicencasData.maxWeeks ?? 8);
+    const licencasByWeekMap = new Map<string, Array<{ weekIndex: number; sumLicencas: number | null }>>();
+    cohortLicencasData.cohorts.forEach((c) => {
+      licencasByWeekMap.set(c.semanaEntrada, c.weeksData);
+    });
+
+    type CategoryType = 'crescimento_real' | 'diluicao_saudavel' | 'engajamento_inflado' | 'perda_real' | 'estavel' | 'marco_zero' | 'sem_dado';
+
+    const cohorts = cohortEngagementData.cohorts.map((engCohort) => {
+      const licWeeks = licencasByWeekMap.get(engCohort.semanaEntrada) || [];
+
+      const weeksData = engCohort.weeksData.map((w, idx) => {
+        const engCurr = w.avgEngagement;
+        const licCurr = licWeeks[idx]?.sumLicencas ?? null;
+
+        // Se semana não chegou ou dado ausente
+        if (engCurr === null || licCurr === null) {
+          return {
+            weekIndex: w.weekIndex,
+            avgEngagement: null,
+            sumLicencas: null,
+            deltaEng: null,
+            deltaLic: null,
+            category: 'sem_dado' as CategoryType,
+          };
+        }
+
+        // S0: marco zero (não classificado)
+        if (idx === 0) {
+          return {
+            weekIndex: w.weekIndex,
+            avgEngagement: engCurr,
+            sumLicencas: licCurr,
+            deltaEng: 0,
+            deltaLic: 0,
+            category: 'marco_zero' as CategoryType,
+          };
+        }
+
+        const engPrev = engCohort.weeksData[idx - 1]?.avgEngagement;
+        const licPrev = licWeeks[idx - 1]?.sumLicencas ?? null;
+
+        if (engPrev === null || engPrev === undefined || licPrev === null || licPrev === undefined) {
+          return {
+            weekIndex: w.weekIndex,
+            avgEngagement: engCurr,
+            sumLicencas: licCurr,
+            deltaEng: null,
+            deltaLic: null,
+            category: 'sem_dado' as CategoryType,
+          };
+        }
+
+        const deltaEng = engCurr - engPrev;
+        const deltaLic = licCurr - licPrev;
+
+        let category: CategoryType = 'estavel';
+
+        // Margem de estabilidade: se |Δ Licenças| < 1 OU |Δ% Engajamento| < 1
+        if (Math.abs(deltaLic) < 1 || Math.abs(deltaEng) < 1) {
+          category = 'estavel';
+        } else if (deltaLic > 0 && deltaEng > 0) {
+          category = 'crescimento_real';
+        } else if (deltaLic > 0 && deltaEng < 0) {
+          category = 'diluicao_saudavel';
+        } else if (deltaLic < 0 && deltaEng > 0) {
+          category = 'engajamento_inflado';
+        } else if (deltaLic < 0 && deltaEng < 0) {
+          category = 'perda_real';
+        }
+
+        return {
+          weekIndex: w.weekIndex,
+          avgEngagement: engCurr,
+          sumLicencas: licCurr,
+          deltaEng,
+          deltaLic,
+          category,
+        };
+      });
+
+      return {
+        semanaEntrada: engCohort.semanaEntrada,
+        label: engCohort.label,
+        planCount: engCohort.planCount,
+        weeksData,
+      };
+    });
+
+    return {
+      status: 'ok' as const,
+      cohorts,
+      maxWeeks,
+    };
+  }, [cohortEngagementData, cohortLicencasData]);
+
+  // Ranking de Planos de Retenção por Tipo (Segmento Histórico no momento da criação do plano S0 que começa com 'R')
+  const retentionPlanRanking = useMemo(() => {
+    if (!rawData) {
+      return { status: 'loading' as const, ranking: [] };
+    }
+
+    const { basePlans, partnerSnapshots } = rawData;
+
+    // Helper functions para data
+    const getMondayOfWeek = (dateStr: string): string => {
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return '';
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const date = new Date(Date.UTC(year, month, day, 12, 0, 0));
+      const dayOfWeek = date.getUTCDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      date.setUTCDate(date.getUTCDate() + diff);
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(date.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    const addDays = (dateStr: string, days: number): string => {
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      const date = new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0));
+      date.setUTCDate(date.getUTCDate() + days);
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(date.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    // Pre-process partner_snapshots by partner_id sorted by imported_at
+    const snapshotsByPartner = new Map<string, Array<{
+      importedAtDateStr: string;
+      plano: string | null;
+    }>>();
+
+    (partnerSnapshots || []).forEach((ps: any) => {
+      if (!ps.partner_id || !ps.imported_at) return;
+      const dateStr = typeof ps.imported_at === 'string'
+        ? ps.imported_at.split('T')[0]
+        : String(ps.imported_at).substring(0, 10);
+
+      const list = snapshotsByPartner.get(ps.partner_id) || [];
+      list.push({
+        importedAtDateStr: dateStr,
+        plano: ps.plano ? String(ps.plano).trim() : null
+      });
+      snapshotsByPartner.set(ps.partner_id, list);
+    });
+
+    snapshotsByPartner.forEach((list) => {
+      list.sort((a, b) => a.importedAtDateStr.localeCompare(b.importedAtDateStr));
+    });
+
+    // Helper to get partner's locked historical plano at S0
+    const getPartnerPlanoAtS0 = (partnerId: string, semanaEntrada: string): string | null => {
+      const partnerSnaps = snapshotsByPartner.get(partnerId);
+      if (!partnerSnaps || partnerSnaps.length === 0) return null;
+      const dataRefS0 = addDays(semanaEntrada, 6);
+      let validSnap: { plano: string | null } | null = null;
+      for (let i = partnerSnaps.length - 1; i >= 0; i--) {
+        if (partnerSnaps[i].importedAtDateStr <= dataRefS0) {
+          validSnap = partnerSnaps[i];
+          break;
+        }
+      }
+      return validSnap?.plano || null;
+    };
+
+    // Agrupamento por tipo de plano (todos os segmentos históricos)
+    const typeMap = new Map<string, { createdPlans: number; partnersSet: Set<string> }>();
+
+    (basePlans || []).forEach((p: any) => {
+      if (!p || !p.partner_id || !p.created_at) return;
+
+      const entryDate = typeof p.created_at === 'string' ? p.created_at.split('T')[0] : String(p.created_at).substring(0, 10);
+      if (!entryDate) return;
+
+      const semanaEntrada = getMondayOfWeek(entryDate);
+      if (!semanaEntrada) return;
+
+      const historicalPlano = getPartnerPlanoAtS0(p.partner_id, semanaEntrada);
+      if (!historicalPlano) return;
+
+      const trimmedPlano = historicalPlano.trim().toUpperCase();
+
+      const current = typeMap.get(trimmedPlano) || { createdPlans: 0, partnersSet: new Set<string>() };
+      current.createdPlans += 1;
+      current.partnersSet.add(p.partner_id);
+      typeMap.set(trimmedPlano, current);
+    });
+
+    const ranking = Array.from(typeMap.entries()).map(([tipo, data]) => ({
+      tipo,
+      totalPartners: data.partnersSet.size,
+      createdPlans: data.createdPlans
+    })).sort((a, b) => b.createdPlans - a.createdPlans);
+
+    return {
+      status: 'ok' as const,
+      ranking
+    };
+  }, [rawData]);
+
+  const chartWeeklyData = useMemo(() => {
+    const colors = weeklyStats.map((_, idx) => 
+      idx === weeklyStats.length - 1 ? '#4f46e5' : 'rgba(99, 102, 241, 0.25)'
+    );
+    const hoverColors = weeklyStats.map((_, idx) => 
+      idx === weeklyStats.length - 1 ? '#4338ca' : 'rgba(99, 102, 241, 0.45)'
+    );
+    return {
+      labels: weeklyStats.map(w => w.label),
+      datasets: [
+        {
+          label: 'Planos Criados',
+          data: weeklyStats.map(w => w.count),
+          backgroundColor: colors,
+          hoverBackgroundColor: hoverColors,
+          borderRadius: 6,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        }
+      ]
+    };
+  }, [weeklyStats]);
+
+  const partnerSnapshotsData = useMemo(() => {
+    if (!rawData || !rawData.partnerSnapshots) {
+      return {
+        labels: [],
+        totalLicencas: [],
+        engajadasLicencas: [],
+        taxaEngajamento: [],
+        hasData: false,
+        latestKpis: { totalLicencas: 0, engajadasLicencas: 0, taxaEngajamento: 0 },
+        insightText: ''
+      };
+    }
+
+    const { partnerSnapshots, partners, basePlans, tasks, managersList, allUsers } = rawData;
+
+    const validUserNames = new Set(
+      (allUsers || managersList || []).map((u: any) => (u.nome || '').trim().toLowerCase()).filter(Boolean)
+    );
+
+    const playbooksNovosPartnerIds = new Set<string>();
+    (basePlans || []).forEach((p: any) => {
+      if (p.playbook_id != null && p.partner_id) {
+        playbooksNovosPartnerIds.add(p.partner_id);
+      }
+    });
+
+    const partnerToPlansMap = new Map<string, any[]>();
+    (basePlans || []).forEach((p: any) => {
+      if (p && p.id && p.partner_id) {
+        const list = partnerToPlansMap.get(p.partner_id) || [];
+        list.push(p);
+        partnerToPlansMap.set(p.partner_id, list);
+      }
+    });
+
+    const planToTasksMap = new Map<string, any[]>();
+    (tasks || []).forEach((t: any) => {
+      if (t && t.plan_id && !t.deletada_em) {
+        const list = planToTasksMap.get(t.plan_id) || [];
+        list.push(t);
+        planToTasksMap.set(t.plan_id, list);
+      }
+    });
+
+    const partnersWithPlanIds = new Set<string>(
+      (basePlans || []).map((p: any) => (p && p.id && p.partner_id ? p.partner_id : null)).filter(Boolean)
+    );
+
+    const partnersWithIniciadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === true && pTasks.some((t: any) => t.status === 'concluida') && !todasTasksConcluidas) {
+          partnersWithIniciadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithFinalizadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === false || todasTasksConcluidas) {
+          partnersWithFinalizadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithSucessoIds = new Set<string>();
+    const partnersWithSemSucessoIds = new Set<string>();
+    const partnersWithNaoClassificadoIds = new Set<string>();
+
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        if (p.status_conclusao === 'sucesso') {
+          partnersWithSucessoIds.add(partnerId);
+        }
+        if (p.status_conclusao === 'sem_sucesso') {
+          partnersWithSemSucessoIds.add(partnerId);
+        }
+        const pTasks = planToTasksMap.get(p.id) || [];
+        if (
+          pTasks.length > 0 &&
+          pTasks.every((t: any) => t.status === 'concluida') &&
+          (!p.status_conclusao || p.status_conclusao === '')
+        ) {
+          partnersWithNaoClassificadoIds.add(partnerId);
+        }
+      }
+    });
+
+    const partnerPassesFilter = (partner: any) => {
+      if (!partner) return false;
+
+      // Restringir a parceiros cujo gerente corresponde a um usuário real cadastrado
+      const partnerGerenteNorm = partner.gerente ? partner.gerente.trim().toLowerCase() : '';
+      if (!partnerGerenteNorm || !validUserNames.has(partnerGerenteNorm)) {
+        return false;
+      }
+
+      const planoVal = partner.segmento?.trim() || '';
+      if (selectedPlanos.length > 0) {
+        if (!selectedPlanos.includes(planoVal)) return false;
+      }
+
+      const managerObj = (managersList || []).find((m: any) => m.id === partner.gerente_id);
+      const managerName = managerObj?.nome || 'Sem Gerente';
+      if (selectedGerentes.length > 0) {
+        if (!selectedGerentes.includes(managerName)) return false;
+      }
+
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!playbooksNovosPartnerIds.has(partner.id)) return false;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (playbooksNovosPartnerIds.has(partner.id)) return false;
+      }
+
+      if (comPlano === 'com_plano') {
+        if (!partnersWithPlanIds.has(partner.id)) return false;
+      } else if (comPlano === 'sem_plano') {
+        if (partnersWithPlanIds.has(partner.id)) return false;
+      }
+
+      if (statusEtapaPlano === 'iniciado') {
+        if (!partnersWithIniciadoIds.has(partner.id)) return false;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!partnersWithFinalizadoIds.has(partner.id)) return false;
+      }
+
+      // Filter by Status de Conclusão
+      if (statusConclusao === 'sucesso') {
+        if (!partnersWithSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (!partnersWithSemSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'nao_classificado') {
+        if (!partnersWithNaoClassificadoIds.has(partner.id)) return false;
+      }
+
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return false;
+      }
+
+      return true;
+    };
+
+    const filteredPartners = (partners || []).filter(partnerPassesFilter);
+    const filteredPartnerIds = new Set(filteredPartners.map(p => p.id));
+
+    const snapshotByDateMap = new Map<string, { totalLicencas: number; engajadasLicencas: number }>();
+
+    partnerSnapshots.forEach((ps: any) => {
+      if (!filteredPartnerIds.has(ps.partner_id)) return;
+      if (ps.import_completo === false) return;
+      const rawDate = ps.imported_at;
+      if (!rawDate) return;
+      const dateKey = typeof rawDate === 'string' ? rawDate.split('T')[0] : String(rawDate).substring(0, 10);
+
+      const current = snapshotByDateMap.get(dateKey) || { totalLicencas: 0, engajadasLicencas: 0 };
+      current.totalLicencas += Number(ps.licencas) || 0;
+      current.engajadasLicencas += Number(ps.licencas_engajadas) || 0;
+      snapshotByDateMap.set(dateKey, current);
+    });
+
+    let sortedDates = Array.from(snapshotByDateMap.keys()).sort((a, b) => a.localeCompare(b));
+
+    // Janela "Últimas X importações"
+    if (historicImportCount === '4') {
+      sortedDates = sortedDates.slice(-4);
+    } else if (historicImportCount === '8') {
+      sortedDates = sortedDates.slice(-8);
+    }
+
+    const labels = sortedDates.map(dateStr => {
+      const cleanDate = dateStr.split('T')[0];
+      const parts = cleanDate.split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}`;
+      }
+      return dateStr;
+    });
+
+    const totalLicencas = sortedDates.map(d => snapshotByDateMap.get(d)!.totalLicencas);
+    const engajadasLicencas = sortedDates.map(d => snapshotByDateMap.get(d)!.engajadasLicencas);
+    const taxaEngajamento = sortedDates.map(d => {
+      const item = snapshotByDateMap.get(d)!;
+      if (item.totalLicencas > 0) {
+        return Number(((item.engajadasLicencas / item.totalLicencas) * 100).toFixed(1));
+      }
+      return 0;
+    });
+
+    const hasData = sortedDates.length > 0;
+
+    let latestKpis = { totalLicencas: 0, engajadasLicencas: 0, taxaEngajamento: 0 };
+    let insightText = '';
+
+    if (hasData) {
+      const latestIdx = sortedDates.length - 1;
+      const latestTotal = totalLicencas[latestIdx];
+      const latestEngaged = engajadasLicencas[latestIdx];
+      const latestPct = taxaEngajamento[latestIdx];
+
+      latestKpis = {
+        totalLicencas: latestTotal,
+        engajadasLicencas: latestEngaged,
+        taxaEngajamento: latestPct
+      };
+
+      // Cálculo do insight dinâmico
+      const minPct = Math.min(...taxaEngajamento);
+      const minIndex = taxaEngajamento.indexOf(minPct);
+      const minDateLabel = labels[minIndex];
+
+      const maxPct = Math.max(...taxaEngajamento);
+
+      if (sortedDates.length > 1) {
+        const diffPP = Number((latestPct - minPct).toFixed(1));
+        if (diffPP > 0 && latestIdx !== minIndex) {
+          insightText = `O engajamento recuperou ${diffPP.toString().replace('.', ',')} p.p. desde ${minDateLabel} e se mantém em ${latestPct.toString().replace('.', ',')}%.`;
+        } else if (diffPP === 0 && minPct === maxPct) {
+          insightText = `O engajamento se manteve estável em ${latestPct.toString().replace('.', ',')}% durante todo o período visível.`;
+        } else {
+          const maxIndex = taxaEngajamento.indexOf(maxPct);
+          const maxDateLabel = labels[maxIndex];
+          const diffDrop = Number((maxPct - latestPct).toFixed(1));
+          if (diffDrop > 0) {
+            insightText = `O engajamento recuou ${diffDrop.toString().replace('.', ',')} p.p. em relação ao pico de ${maxPct.toString().replace('.', ',')}% em ${maxDateLabel} e se mantém em ${latestPct.toString().replace('.', ',')}%.`;
+          } else {
+            insightText = `O engajamento atual está em ${latestPct.toString().replace('.', ',')}%, variando ${diffPP.toString().replace('.', ',')} p.p. em relação ao menor ponto do período (${minDateLabel}).`;
+          }
+        }
+      } else {
+        insightText = `Engajamento atual em ${latestPct.toString().replace('.', ',')}% para a importação de ${labels[0]}.`;
+      }
+    }
+
+    return {
+      labels,
+      totalLicencas,
+      engajadasLicencas,
+      taxaEngajamento,
+      hasData,
+      latestKpis,
+      insightText
+    };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, comPlano, statusEtapaPlano, statusConclusao, selectedFila, historicImportCount]);
+
+  // Evolução das Faixas de Engajamento por data de importação
+  const engagementTiersData = useMemo(() => {
+    if (!rawData || !rawData.partnerSnapshots) {
+      return {
+        labels: [],
+        pctAbaixo50: [],
+        pctAbaixo75: [],
+        pctAcima75: [],
+        hasData: false,
+        latestKpis: { pctAbaixo50: 0, pctAbaixo75: 0, pctAcima75: 0, totalParceiros: 0 }
+      };
+    }
+
+    const { partnerSnapshots, partners, basePlans, tasks, managersList, allUsers } = rawData;
+
+    const validUserNames = new Set(
+      (allUsers || managersList || []).map((u: any) => (u.nome || '').trim().toLowerCase()).filter(Boolean)
+    );
+
+    const playbooksNovosPartnerIds = new Set<string>();
+    (basePlans || []).forEach((p: any) => {
+      if (p.playbook_id != null && p.partner_id) {
+        playbooksNovosPartnerIds.add(p.partner_id);
+      }
+    });
+
+    const partnerToPlansMap = new Map<string, any[]>();
+    (basePlans || []).forEach((p: any) => {
+      if (p && p.id && p.partner_id) {
+        const list = partnerToPlansMap.get(p.partner_id) || [];
+        list.push(p);
+        partnerToPlansMap.set(p.partner_id, list);
+      }
+    });
+
+    const planToTasksMap = new Map<string, any[]>();
+    (tasks || []).forEach((t: any) => {
+      if (t && t.plan_id && !t.deletada_em) {
+        const list = planToTasksMap.get(t.plan_id) || [];
+        list.push(t);
+        planToTasksMap.set(t.plan_id, list);
+      }
+    });
+
+    const partnersWithPlanIds = new Set<string>(
+      (basePlans || []).map((p: any) => (p && p.id && p.partner_id ? p.partner_id : null)).filter(Boolean)
+    );
+
+    const partnersWithIniciadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === true && pTasks.some((t: any) => t.status === 'concluida') && !todasTasksConcluidas) {
+          partnersWithIniciadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithFinalizadoIds = new Set<string>();
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        const pTasks = planToTasksMap.get(p.id) || [];
+        const todasTasksConcluidas = pTasks.length > 0 && pTasks.every((t: any) => t.status === 'concluida');
+        if (p.ativo === false || todasTasksConcluidas) {
+          partnersWithFinalizadoIds.add(partnerId);
+          break;
+        }
+      }
+    });
+
+    const partnersWithSucessoIds = new Set<string>();
+    const partnersWithSemSucessoIds = new Set<string>();
+    const partnersWithNaoClassificadoIds = new Set<string>();
+
+    partnerToPlansMap.forEach((pList, partnerId) => {
+      for (const p of pList) {
+        if (p.status_conclusao === 'sucesso') {
+          partnersWithSucessoIds.add(partnerId);
+        }
+        if (p.status_conclusao === 'sem_sucesso') {
+          partnersWithSemSucessoIds.add(partnerId);
+        }
+        const pTasks = planToTasksMap.get(p.id) || [];
+        if (
+          pTasks.length > 0 &&
+          pTasks.every((t: any) => t.status === 'concluida') &&
+          (!p.status_conclusao || p.status_conclusao === '')
+        ) {
+          partnersWithNaoClassificadoIds.add(partnerId);
+        }
+      }
+    });
+
+    const partnerPassesFilter = (partner: any) => {
+      if (!partner) return false;
+
+      const partnerGerenteNorm = partner.gerente ? partner.gerente.trim().toLowerCase() : '';
+      if (!partnerGerenteNorm || !validUserNames.has(partnerGerenteNorm)) {
+        return false;
+      }
+
+      const planoVal = partner.segmento?.trim() || '';
+      if (selectedPlanos.length > 0) {
+        if (!selectedPlanos.includes(planoVal)) return false;
+      }
+
+      const managerObj = (managersList || []).find((m: any) => m.id === partner.gerente_id);
+      const managerName = managerObj?.nome || 'Sem Gerente';
+      if (selectedGerentes.length > 0) {
+        if (!selectedGerentes.includes(managerName)) return false;
+      }
+
+      if (selectedPlaybookTipo === 'playbooks_novos') {
+        if (!playbooksNovosPartnerIds.has(partner.id)) return false;
+      } else if (selectedPlaybookTipo === 'bau') {
+        if (playbooksNovosPartnerIds.has(partner.id)) return false;
+      }
+
+      if (comPlano === 'com_plano') {
+        if (!partnersWithPlanIds.has(partner.id)) return false;
+      } else if (comPlano === 'sem_plano') {
+        if (partnersWithPlanIds.has(partner.id)) return false;
+      }
+
+      if (statusEtapaPlano === 'iniciado') {
+        if (!partnersWithIniciadoIds.has(partner.id)) return false;
+      } else if (statusEtapaPlano === 'finalizado') {
+        if (!partnersWithFinalizadoIds.has(partner.id)) return false;
+      }
+
+      if (statusConclusao === 'sucesso') {
+        if (!partnersWithSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'sem_sucesso') {
+        if (!partnersWithSemSucessoIds.has(partner.id)) return false;
+      } else if (statusConclusao === 'nao_classificado') {
+        if (!partnersWithNaoClassificadoIds.has(partner.id)) return false;
+      }
+
+      if (selectedFila !== 'todos') {
+        if (partner.fila !== selectedFila) return false;
+      }
+
+      return true;
+    };
+
+    const filteredPartners = (partners || []).filter(partnerPassesFilter);
+    const filteredPartnerIds = new Set(filteredPartners.map(p => p.id));
+
+    // Agrupar snapshots por data e por parceiro
+    // dateKey -> Map<partner_id, { licencas: number, licencas_engajadas: number }>
+    const snapshotsByDate = new Map<string, Map<string, { licencas: number; licencas_engajadas: number }>>();
+
+    partnerSnapshots.forEach((ps: any) => {
+      if (!filteredPartnerIds.has(ps.partner_id)) return;
+      if (ps.import_completo === false) return;
+      const rawDate = ps.imported_at;
+      if (!rawDate) return;
+      const dateKey = typeof rawDate === 'string' ? rawDate.split('T')[0] : String(rawDate).substring(0, 10);
+
+      let dateMap = snapshotsByDate.get(dateKey);
+      if (!dateMap) {
+        dateMap = new Map();
+        snapshotsByDate.set(dateKey, dateMap);
+      }
+
+      // Consolidar se houver múltiplos registros do mesmo parceiro na mesma data
+      const prev = dateMap.get(ps.partner_id) || { licencas: 0, licencas_engajadas: 0 };
+      dateMap.set(ps.partner_id, {
+        licencas: prev.licencas + (Number(ps.licencas) || 0),
+        licencas_engajadas: prev.licencas_engajadas + (Number(ps.licencas_engajadas) || 0)
+      });
+    });
+
+    let sortedDates = Array.from(snapshotsByDate.keys()).sort((a, b) => a.localeCompare(b));
+
+    if (historicImportCount === '4') {
+      sortedDates = sortedDates.slice(-4);
+    } else if (historicImportCount === '8') {
+      sortedDates = sortedDates.slice(-8);
+    }
+
+    const labels = sortedDates.map(dateStr => {
+      const cleanDate = dateStr.split('T')[0];
+      const parts = cleanDate.split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}`;
+      }
+      return dateStr;
+    });
+
+    const pctAbaixo50: number[] = [];
+    const pctAbaixo75: number[] = [];
+    const pctAcima75: number[] = [];
+    let latestTotalParceiros = 0;
+
+    sortedDates.forEach((d, idx) => {
+      const partnerMap = snapshotsByDate.get(d)!;
+      let countValid = 0;
+      let countBelow50 = 0;
+      let countBelow75 = 0;
+      let countAbove75 = 0;
+
+      partnerMap.forEach(({ licencas, licencas_engajadas }) => {
+        // Ignorar parceiros com licencas <= 0 (sem dado válido para engajamento)
+        if (licencas <= 0) return;
+
+        countValid += 1;
+        const pctEng = (licencas_engajadas / licencas) * 100;
+
+        if (pctEng < 50) {
+          countBelow50 += 1;
+        }
+        if (pctEng < 75) {
+          countBelow75 += 1;
+        } else {
+          countAbove75 += 1;
+        }
+      });
+
+      if (countValid > 0) {
+        const valBelow50 = Number(((countBelow50 / countValid) * 100).toFixed(1));
+        const valBelow75 = Number(((countBelow75 / countValid) * 100).toFixed(1));
+        // Garantir que pctAbaixo75 + pctAcima75 = 100.0%
+        const valAbove75 = Number((100 - valBelow75).toFixed(1));
+
+        pctAbaixo50.push(valBelow50);
+        pctAbaixo75.push(valBelow75);
+        pctAcima75.push(valAbove75);
+      } else {
+        pctAbaixo50.push(0);
+        pctAbaixo75.push(0);
+        pctAcima75.push(0);
+      }
+
+      if (idx === sortedDates.length - 1) {
+        latestTotalParceiros = countValid;
+      }
+    });
+
+    const hasData = sortedDates.length > 0;
+    const latestIdx = sortedDates.length - 1;
+    const latestKpis = hasData ? {
+      pctAbaixo50: pctAbaixo50[latestIdx] || 0,
+      pctAbaixo75: pctAbaixo75[latestIdx] || 0,
+      pctAcima75: pctAcima75[latestIdx] || 0,
+      totalParceiros: latestTotalParceiros
+    } : { pctAbaixo50: 0, pctAbaixo75: 0, pctAcima75: 0, totalParceiros: 0 };
+
+    return {
+      labels,
+      pctAbaixo50,
+      pctAbaixo75,
+      pctAcima75,
+      hasData,
+      latestKpis
+    };
+  }, [rawData, selectedPlanos, selectedGerentes, selectedPlaybookTipo, comPlano, statusEtapaPlano, statusConclusao, selectedFila, historicImportCount]);
+
+  const chartEngagementTiersData = useMemo(() => {
+    return {
+      labels: engagementTiersData.labels,
+      datasets: [
+        {
+          label: '% < 50% (Crítico)',
+          data: engagementTiersData.pctAbaixo50,
+          borderColor: '#ef4444',
+          backgroundColor: '#ef4444',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#ef4444',
+          pointHoverRadius: 6,
+          tension: 0.2,
+        },
+        {
+          label: '% < 75% (Abaixo da Meta - Cumulativo)',
+          data: engagementTiersData.pctAbaixo75,
+          borderColor: '#f59e0b',
+          backgroundColor: '#f59e0b',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#f59e0b',
+          pointHoverRadius: 6,
+          tension: 0.2,
+        },
+        {
+          label: '% ≥ 75% (Meta Atingida)',
+          data: engagementTiersData.pctAcima75,
+          borderColor: '#10b981',
+          backgroundColor: '#10b981',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#10b981',
+          pointHoverRadius: 6,
+          tension: 0.2,
+        },
+      ],
+    };
+  }, [engagementTiersData]);
+
+  const chartEngagementTiersOptions = useMemo(() => {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          titleColor: '#f8fafc',
+          bodyColor: '#f1f5f9',
+          padding: 12,
+          cornerRadius: 8,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          callbacks: {
+            label: (context: any) => {
+              const label = context.dataset.label || '';
+              const val = context.parsed.y;
+              return `${label}: ${val != null ? val.toFixed(1).replace('.', ',') : '0,0'}%`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#64748b',
+          },
+        },
+        y: {
+          type: 'linear' as const,
+          display: true,
+          position: 'left' as const,
+          title: {
+            display: true,
+            text: '% de Parceiros',
+            font: { size: 11, weight: '600', family: 'Inter, sans-serif' },
+            color: '#64748b',
+          },
+          grid: { color: 'rgba(226, 232, 240, 0.4)' },
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#64748b',
+            callback: (value: any) => `${value}%`,
+          },
+          min: 0,
+          max: 100,
+        },
+      },
+    };
+  }, []);
+
+  const chartEngagementTiersPlugins = useMemo(() => [
+    {
+      id: 'floating-data-labels-tiers',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          
+          meta.data.forEach((point: any, index: number) => {
+            const val = dataset.data[index];
+            if (val === undefined || val === null) return;
+            
+            const text = `${val.toFixed(1).replace('.', ',')}%`;
+            
+            ctx.font = '600 10px Inter, sans-serif';
+            const textWidth = ctx.measureText(text).width;
+            const paddingX = 5;
+            const boxWidth = textWidth + paddingX * 2;
+            const boxHeight = 16;
+            
+            let yOffset = -22;
+            if (datasetIndex === 0) yOffset = 10;
+            if (datasetIndex === 1) yOffset = -22;
+            if (datasetIndex === 2) yOffset = -24;
+            
+            const boxX = point.x - boxWidth / 2;
+            const boxY = point.y + yOffset - boxHeight / 2;
+            
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+            ctx.beginPath();
+            ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 4);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, point.x, point.y + yOffset);
+          });
+        });
+        
+        ctx.restore();
+      }
+    }
+  ], []);
+
+  const chartLicenseHistoryData = useMemo(() => {
+    return {
+      labels: partnerSnapshotsData.labels,
+      datasets: [
+        {
+          label: 'Licenças Totais',
+          data: partnerSnapshotsData.totalLicencas,
+          borderColor: '#6366f1',
+          backgroundColor: '#6366f1',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#6366f1',
+          pointHoverRadius: 6,
+          tension: 0.2,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Licenças Engajadas',
+          data: partnerSnapshotsData.engajadasLicencas,
+          borderColor: '#10b981',
+          backgroundColor: '#10b981',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#10b981',
+          pointHoverRadius: 6,
+          tension: 0.2,
+          yAxisID: 'y',
+        },
+        {
+          label: '% de Engajamento',
+          data: partnerSnapshotsData.taxaEngajamento,
+          borderColor: '#f59e0b',
+          backgroundColor: '#f59e0b',
+          borderWidth: 2.5,
+          borderDash: [5, 5],
+          pointRadius: 4,
+          pointBackgroundColor: '#f59e0b',
+          pointHoverRadius: 6,
+          tension: 0.2,
+          yAxisID: 'y1',
+        },
+      ],
+    };
+  }, [partnerSnapshotsData]);
+
+  const chartLicenseHistoryOptions = useMemo(() => {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          titleColor: '#f8fafc',
+          bodyColor: '#f1f5f9',
+          padding: 12,
+          cornerRadius: 8,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          callbacks: {
+            label: (context: any) => {
+              const label = context.dataset.label || '';
+              const val = context.parsed.y;
+              if (label.includes('%')) {
+                return `${label}: ${val.toFixed(1).replace('.', ',')}%`;
+              }
+              return `${label}: ${val != null ? val.toLocaleString('pt-BR') : 0}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#64748b',
+          },
+        },
+        y: {
+          type: 'linear' as const,
+          display: true,
+          position: 'left' as const,
+          title: {
+            display: true,
+            text: 'Licenças',
+            font: { size: 11, weight: '600', family: 'Inter, sans-serif' },
+            color: '#64748b',
+          },
+          grid: { color: 'rgba(226, 232, 240, 0.4)' },
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#64748b',
+            callback: (val: any) => Number(val).toLocaleString('pt-BR'),
+          },
+          beginAtZero: true,
+        },
+        y1: {
+          type: 'linear' as const,
+          display: true,
+          position: 'right' as const,
+          title: {
+            display: true,
+            text: '% Engajamento',
+            font: { size: 11, weight: '600', family: 'Inter, sans-serif' },
+            color: '#64748b',
+          },
+          grid: { drawOnChartArea: false },
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#64748b',
+            callback: (value: any) => `${value}%`,
+          },
+          min: 0,
+          max: 100,
+        },
+      },
+    };
+  }, []);
+
+  const chartLicenseHistoryPlugins = useMemo(() => [
+    {
+      id: 'floating-data-labels',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          const isPercent = dataset.yAxisID === 'y1';
+          
+          meta.data.forEach((point: any, index: number) => {
+            const val = dataset.data[index];
+            if (val === undefined || val === null) return;
+            
+            const text = isPercent ? `${val.toFixed(1).replace('.', ',')}%` : val.toLocaleString('pt-BR');
+            
+            ctx.font = '600 10px Inter, sans-serif';
+            const textWidth = ctx.measureText(text).width;
+            const paddingX = 5;
+            const boxWidth = textWidth + paddingX * 2;
+            const boxHeight = 16;
+            
+            let yOffset = -22;
+            if (datasetIndex === 1) yOffset = 10;
+            if (datasetIndex === 2) yOffset = -24;
+            
+            const boxX = point.x - boxWidth / 2;
+            const boxY = point.y + yOffset;
+            
+            ctx.fillStyle = datasetIndex === 0 ? '#eef2ff' : datasetIndex === 1 ? '#ecfdf5' : '#fffbeb';
+            ctx.strokeStyle = datasetIndex === 0 ? '#6366f1' : datasetIndex === 1 ? '#10b981' : '#f59e0b';
+            ctx.lineWidth = 1;
+            
+            ctx.beginPath();
+            if (ctx.roundRect) {
+              ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 4);
+            } else {
+              ctx.rect(boxX, boxY, boxWidth, boxHeight);
+            }
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.fillStyle = datasetIndex === 0 ? '#3730a3' : datasetIndex === 1 ? '#065f46' : '#92400e';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, point.x, boxY + boxHeight / 2);
+          });
+        });
+        
+        ctx.restore();
+      }
+    }
+  ], []);
+
+  const chartWeeklyOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a', // Slate-900
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        displayColors: false,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        callbacks: {
+          title: (items: any) => `Semana de ${items[0]?.label}`,
+          label: (item: any) => `Total: ${item.formattedValue} plano${Number(item.formattedValue) !== 1 ? 's' : ''}`,
+          afterBody: (items: any) => {
+            const dataIndex = items[0]?.dataIndex;
+            if (dataIndex === undefined || !weeklyStats[dataIndex]) return [];
+            
+            const managersMap = weeklyStats[dataIndex].managers;
+            const ranking = (Object.entries(managersMap) as [string, number][])
+               .map(([manager, count]) => ({ manager, count }))
+               .filter(item => item.count > 0)
+               .sort((a, b) => b.count - a.count);
+            
+            if (ranking.length === 0) return [];
+            
+            return [
+              '', // empty line for spacing
+              ...ranking.map(r => `• ${r.manager}: ${r.count} plano${r.count > 1 ? 's' : ''}`)
+            ];
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' }
+        }
+      },
+      y: {
+        grid: {
+          display: false,
+          drawTicks: false
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          precision: 0
+        },
+        grace: '15%',
+        beginAtZero: true
+      }
+    }
+  };
+
+  const chartWeeklyPlugins = [
+    {
+      id: 'datalabels',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          meta.data.forEach((bar: any, index: number) => {
+            const value = dataset.data[index];
+            if (value === undefined || value === null) return;
+            
+            ctx.font = 'bold 11px Inter, sans-serif';
+            const isLastBar = index === dataset.data.length - 1;
+            ctx.fillStyle = isLastBar ? '#4f46e5' : '#64748b';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            
+            const x = bar.x;
+            const y = bar.y - 6; // Posiciona um pouco acima do topo da barra
+            
+            ctx.fillText(value.toString(), x, y);
+          });
+        });
+        ctx.restore();
+      }
+    }
+  ];
+
+  const managerColorMap = useMemo(() => {
+    // Extract unique manager names from both completed and delayed tasks to assign consistent colors
+    const managersSet = new Set<string>();
+    completedTasksStats.forEach(w => {
+      Object.keys(w.managers).forEach(m => {
+        managersSet.add(m);
+      });
+    });
+    delayedTasksStats.forEach(w => {
+      Object.keys(w.managers).forEach(m => {
+        managersSet.add(m);
+      });
+    });
+    const uniqueManagers = Array.from(managersSet).sort();
+
+    const SOBER_COLORS = [
+      '#4f46e5', // Indigo
+      '#0ea5e9', // Sky blue
+      '#10b981', // Emerald
+      '#f59e0b', // Amber
+      '#8b5cf6', // Violet
+      '#ec4899', // Pink
+      '#14b8a6', // Teal
+      '#3b82f6', // Blue
+      '#a855f7', // Purple
+      '#f43f5e', // Rose
+      '#06b6d4', // Cyan
+      '#84cc16', // Lime
+    ];
+    
+    const mapping: Record<string, string> = {};
+    uniqueManagers.forEach((name, idx) => {
+      mapping[name] = SOBER_COLORS[idx % SOBER_COLORS.length];
+    });
+    return mapping;
+  }, [completedTasksStats, delayedTasksStats]);
+
+  const chartCompletedTasksData = useMemo(() => {
+    const uniqueManagers = Object.keys(managerColorMap).sort();
+
+    // Build datasets
+    const datasets = uniqueManagers.map(managerName => {
+      const data = completedTasksStats.map(w => w.managers[managerName] || 0);
+      return {
+        label: managerName,
+        data,
+        backgroundColor: managerColorMap[managerName],
+        borderRadius: 4,
+        barPercentage: 0.6,
+        categoryPercentage: 0.8
+      };
+    });
+
+    return {
+      labels: completedTasksStats.map(w => w.label),
+      datasets
+    };
+  }, [completedTasksStats, managerColorMap]);
+
+  const chartDelayedTasksData = useMemo(() => {
+    const uniqueManagers = Object.keys(managerColorMap).sort();
+
+    // Build datasets
+    const datasets = uniqueManagers.map(managerName => {
+      const data = delayedTasksStats.map(w => w.managers[managerName] || 0);
+      return {
+        label: managerName,
+        data,
+        backgroundColor: managerColorMap[managerName],
+        borderRadius: 4,
+        barPercentage: 0.6,
+        categoryPercentage: 0.8
+      };
+    });
+
+    return {
+      labels: delayedTasksStats.map(w => w.label),
+      datasets
+    };
+  }, [delayedTasksStats, managerColorMap]);
+
+  const chartCompletedTasksOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a', // Slate-900
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        // Only show items where value > 0
+        filter: (tooltipItem: any) => {
+          return tooltipItem.raw > 0;
+        },
+        callbacks: {
+          title: (items: any) => `Semana de ${items[0]?.label}`,
+          label: (item: any) => `• ${item.dataset.label}: ${item.raw} task${item.raw !== 1 ? 's' : ''}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' }
+        }
+      },
+      y: {
+        stacked: true,
+        grid: {
+          display: false,
+          drawTicks: false
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          precision: 0
+        },
+        grace: '15%',
+        beginAtZero: true
+      }
+    }
+  };
+
+  const chartDelayedTasksOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a', // Slate-900
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        // Only show items where value > 0
+        filter: (tooltipItem: any) => {
+          return tooltipItem.raw > 0;
+        },
+        callbacks: {
+          title: (items: any) => `Semana de ${items[0]?.label}`,
+          label: (item: any) => `• ${item.dataset.label}: ${item.raw} task${item.raw !== 1 ? 's' : ''}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' }
+        }
+      },
+      y: {
+        stacked: true,
+        grid: {
+          display: false,
+          drawTicks: false
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          precision: 0
+        },
+        grace: '15%',
+        beginAtZero: true
+      }
+    }
+  };
+
+  const chartCompletedTasksPlugins = [
+    {
+      id: 'datalabels-stacked',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        
+        const totals: number[] = [];
+        const topY: number[] = [];
+        
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          meta.data.forEach((bar: any, index: number) => {
+            const val = dataset.data[index] || 0;
+            totals[index] = (totals[index] || 0) + val;
+            if (val > 0) {
+              if (topY[index] === undefined || bar.y < topY[index]) {
+                topY[index] = bar.y;
+              }
+            }
+          });
+        });
+        
+        const meta0 = chart.getDatasetMeta(0);
+        meta0.data.forEach((bar: any, index: number) => {
+          const total = totals[index] || 0;
+          if (total === 0) return;
+          
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillStyle = '#4f46e5';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          
+          const y = topY[index] !== undefined ? topY[index] - 6 : bar.y - 6;
+          ctx.fillText(total.toString(), bar.x, y);
+        });
+        
+        ctx.restore();
+      }
+    }
+  ];
+
+  const chartDelayedTasksPlugins = [
+    {
+      id: 'datalabels-stacked-delayed',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        
+        const totals: number[] = [];
+        const topY: number[] = [];
+        
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          meta.data.forEach((bar: any, index: number) => {
+            const val = dataset.data[index] || 0;
+            totals[index] = (totals[index] || 0) + val;
+            if (val > 0) {
+              if (topY[index] === undefined || bar.y < topY[index]) {
+                topY[index] = bar.y;
+              }
+            }
+          });
+        });
+        
+        const meta0 = chart.getDatasetMeta(0);
+        meta0.data.forEach((bar: any, index: number) => {
+          const total = totals[index] || 0;
+          if (total === 0) return;
+          
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillStyle = '#e11d48'; // Rose/Red color for delayed totals
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          
+          const y = topY[index] !== undefined ? topY[index] - 6 : bar.y - 6;
+          ctx.fillText(total.toString(), bar.x, y);
+        });
+        
+        ctx.restore();
+      }
+    }
+  ];
+
+  const chartFinishedPlansData = useMemo(() => {
+    return {
+      labels: finishedPlansStats.map(s => s.manager),
+      datasets: [
+        {
+          label: 'Planos Finalizados',
+          data: finishedPlansStats.map(s => s.count),
+          backgroundColor: '#4f46e5',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        }
+      ]
+    };
+  }, [finishedPlansStats]);
+
+  const chartFinishedPlansOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a', // Slate-900
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        callbacks: {
+          title: (items: any) => items[0]?.label || '',
+          label: (item: any) => `• Planos: ${item.raw}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' }
+        }
+      },
+      y: {
+        grid: {
+          display: false,
+          drawTicks: false
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          precision: 0
+        },
+        grace: '15%',
+        beginAtZero: true
+      }
+    }
+  };
+
+  const chartFinishedPlansPlugins = [
+    {
+      id: 'datalabels-finished-plans',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        const meta = chart.getDatasetMeta(0);
+        meta.data.forEach((bar: any, index: number) => {
+          const val = chart.data.datasets[0].data[index] || 0;
+          if (val === 0) return;
+          
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillStyle = '#4f46e5';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          
+          ctx.fillText(val.toString(), bar.x, bar.y - 6);
+        });
+        ctx.restore();
+      }
+    }
+  ];
+
+  const chartTasksStatusData = useMemo(() => {
+    const labels = tasksStatusStats.map(s => s.manager);
+    const backlogData = tasksStatusStats.map(s => s.backlog);
+    const agendaData = tasksStatusStats.map(s => s.agenda);
+    const emAndamentoData = tasksStatusStats.map(s => s.em_andamento);
+    const concluidaData = tasksStatusStats.map(s => s.concluida);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Backlog',
+          data: backlogData,
+          backgroundColor: '#94a3b8',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        },
+        {
+          label: 'Agenda',
+          data: agendaData,
+          backgroundColor: '#6366f1',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        },
+        {
+          label: 'Em Andamento',
+          data: emAndamentoData,
+          backgroundColor: '#f97316',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        },
+        {
+          label: 'Concluída',
+          data: concluidaData,
+          backgroundColor: '#10b981',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8
+        }
+      ]
+    };
+  }, [tasksStatusStats]);
+
+  const chartTasksStatusOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+        labels: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          boxWidth: 12,
+          padding: 15
+        }
+      },
+      tooltip: {
+        backgroundColor: '#0f172a', // Slate-900
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        filter: (tooltipItem: any) => {
+          return tooltipItem.raw > 0;
+        },
+        callbacks: {
+          title: (items: any) => items[0]?.label || '',
+          label: (item: any) => `• ${item.dataset.label}: ${item.raw} task${item.raw !== 1 ? 's' : ''}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' }
+        }
+      },
+      y: {
+        stacked: true,
+        grid: {
+          display: false,
+          drawTicks: false
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+          precision: 0
+        },
+        grace: '15%',
+        beginAtZero: true
+      }
+    }
+  };
+
+  const chartTasksStatusPlugins = [
+    {
+      id: 'datalabels-stacked-status',
+      afterDatasetsDraw(chart: any) {
+        const { ctx } = chart;
+        ctx.save();
+        
+        const totals: number[] = [];
+        const topY: number[] = [];
+        
+        chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+          const meta = chart.getDatasetMeta(datasetIndex);
+          meta.data.forEach((bar: any, index: number) => {
+            const val = dataset.data[index] || 0;
+            totals[index] = (totals[index] || 0) + val;
+            if (val > 0) {
+              if (topY[index] === undefined || bar.y < topY[index]) {
+                topY[index] = bar.y;
+              }
+            }
+          });
+        });
+        
+        const meta0 = chart.getDatasetMeta(0);
+        meta0.data.forEach((bar: any, index: number) => {
+          const total = totals[index] || 0;
+          if (total === 0) return;
+          
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.fillStyle = '#4f46e5';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          
+          const y = topY[index] !== undefined ? topY[index] - 6 : bar.y - 6;
+          ctx.fillText(total.toString(), bar.x, y);
+        });
+        
+        ctx.restore();
+      }
+    }
+  ];
+
+  // Fetch step tasks and task status history when selectedPlaybookId changes
+  useEffect(() => {
+    if (!selectedPlaybookId) {
+      setStepTasks([]);
+      setStepHistory([]);
+      return;
+    }
+
+    let isMounted = true;
+    setLoadingStepData(true);
+
+    const fetchStepData = async () => {
+      try {
+        const [pbTasksRes, historyRes] = await Promise.all([
+          supabase
+            .from('playbook_tasks')
+            .select('id, titulo, ordem')
+            .eq('playbook_id', selectedPlaybookId)
+            .order('ordem', { ascending: true }),
+          supabase
+            .from('task_status_history')
+            .select('alterado_em, status_novo, tasks!inner(id, ordem, deletada_em, plan_id, plans!inner(playbook_id, partner_id))')
+            .eq('status_novo', 'concluida')
+            .eq('tasks.plans.playbook_id', selectedPlaybookId)
+        ]);
+
+        if (!isMounted) return;
+
+        if (pbTasksRes.error) {
+          console.warn('Erro ao buscar playbook_tasks:', pbTasksRes.error);
+        }
+        if (historyRes.error) {
+          console.warn('Erro ao buscar task_status_history:', historyRes.error);
+        }
+
+        setStepTasks(pbTasksRes.data || []);
+        setStepHistory(historyRes.data || []);
+      } catch (err) {
+        console.error('Erro ao carregar dados do playbook selecionado:', err);
+        if (isMounted) {
+          setStepTasks([]);
+          setStepHistory([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingStepData(false);
+        }
+      }
+    };
+
+    fetchStepData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedPlaybookId]);
+
+  const stackedBarChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          boxWidth: 12,
+          padding: 16,
+          font: { size: 11, family: 'Inter, sans-serif' },
+          usePointStyle: true,
+        },
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        backgroundColor: '#0f172a',
+        titleColor: '#f8fafc',
+        bodyColor: '#f1f5f9',
+        padding: 12,
+        cornerRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        callbacks: {
+          title: (tooltipItems: any[]) => {
+            if (!tooltipItems.length) return '';
+            return `Data: ${tooltipItems[0].label}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+        },
+      },
+      y: {
+        stacked: true,
+        grid: {
+          color: 'rgba(226, 232, 240, 0.4)',
+        },
+        beginAtZero: true,
+        ticks: {
+          precision: 0,
+          color: '#94a3b8',
+          font: { size: 11, family: 'Inter, sans-serif' },
+        },
+      },
+    },
+  }), []);
+
+  const stepChartData = useMemo(() => {
+    if (!selectedPlaybookId) {
+      return { status: 'no_selection' as const, chartData: null };
+    }
+
+    const validHistory = stepHistory.filter((item: any) => {
+      if (item.status_novo !== 'concluida') return false;
+      if (!item.alterado_em) return false;
+      const task = item.tasks;
+      if (!task || task.deletada_em) return false;
+      const plan = task.plans;
+      if (!plan || plan.playbook_id !== selectedPlaybookId) return false;
+      return true;
+    });
+
+    if (validHistory.length === 0) {
+      return { status: 'empty' as const, chartData: null };
+    }
+
+    const dateStrs = validHistory.map((item: any) => item.alterado_em.substring(0, 10));
+    dateStrs.sort();
+    const minDateStr = dateStrs[0];
+
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const maxDateStr = `${yyyy}-${mm}-${dd}`;
+
+    const dateList: string[] = [];
+    let curr = new Date(minDateStr + 'T00:00:00');
+    const endDate = new Date(maxDateStr + 'T00:00:00');
+
+    while (curr <= endDate) {
+      const cyyyy = curr.getFullYear();
+      const cmm = String(curr.getMonth() + 1).padStart(2, '0');
+      const cdd = String(curr.getDate()).padStart(2, '0');
+      dateList.push(`${cyyyy}-${cmm}-${cdd}`);
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    const ordemsSet = new Set<number>();
+    stepTasks.forEach((t) => ordemsSet.add(t.ordem));
+    validHistory.forEach((item: any) => {
+      if (item.tasks && typeof item.tasks.ordem === 'number') {
+        ordemsSet.add(item.tasks.ordem);
+      }
+    });
+
+    const sortedOrdems = Array.from(ordemsSet).sort((a, b) => a - b);
+
+    const ordemTitles: { [key: number]: string } = {};
+    sortedOrdems.forEach((ordem) => {
+      const found = stepTasks.find((t) => t.ordem === ordem);
+      ordemTitles[ordem] = found?.titulo || `Etapa ${ordem}`;
+    });
+
+    const colors = [
+      '#4f46e5',
+      '#10b981',
+      '#f59e0b',
+      '#ef4444',
+      '#06b6d4',
+      '#8b5cf6',
+      '#ec4899',
+      '#3b82f6',
+      '#14b8a6',
+      '#f97316',
+    ];
+
+    const labels = dateList.map((d) => {
+      const parts = d.split('-');
+      return `${parts[2]}/${parts[1]}`;
+    });
+
+    const datasets = sortedOrdems.map((ordem, idx) => {
+      const seriesData = dateList.map((dayStr) => {
+        return validHistory.filter((item: any) => {
+          return item.alterado_em.startsWith(dayStr) && item.tasks?.ordem === ordem;
+        }).length;
+      });
+
+      const color = colors[idx % colors.length];
+
+      return {
+        label: `${ordemTitles[ordem]}`,
+        data: seriesData,
+        backgroundColor: color,
+        borderRadius: 2,
+      };
+    });
+
+    return {
+      status: 'ok' as const,
+      chartData: {
+        labels,
+        datasets,
+      },
+    };
+  }, [selectedPlaybookId, stepTasks, stepHistory]);
+
+  // Protected route logic (admin-only)
+  if (authLoading) return null;
+  if (!user || !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return (
+    <div className="min-h-screen bg-bg-primary p-6 md:p-8">
+      <style>{`
+        .scroll-minimal::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        .scroll-minimal::-webkit-scrollbar-thumb {
+          background-color: rgba(156, 163, 175, 0.3);
+          border-radius: 9999px;
+        }
+        .scroll-minimal::-webkit-scrollbar-thumb:hover {
+          background-color: rgba(156, 163, 175, 0.5);
+        }
+        .scroll-minimal::-webkit-scrollbar-track {
+          background: transparent;
+        }
+      `}</style>
+      {/* Header */}
+      <div className="mb-8 flex items-center justify-between border-b border-border border-opacity-50 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+            <Layout className="h-6 w-6" id="dashboard-v2-icon" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-text-primary" id="dashboard-v2-title">
+              Dashboard Gerencial V2
+            </h1>
+            <p className="text-sm text-text-secondary mt-1">
+              Visão consolidada e análises gerenciais da base de parceiros.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Grid of sections */}
+      <div className="flex flex-col gap-6">
+        {/* Barra de Filtros */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col animate-fade-in" id="container-filtros-gerenciais">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-border border-opacity-30 pb-3">
+            <div className="flex items-center gap-2.5">
+              <Filter className="h-5 w-5 text-indigo-600 dark:text-indigo-400" id="icon-filtros" />
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-text-primary" id="title-filtros">
+                  Filtros de Análise
+                </h3>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 ml-auto" id="header-filter-actions">
+              <span className="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50" id="badge-active-filters">
+                {activeFiltersCount} {activeFiltersCount === 1 ? 'filtro ativo' : 'filtros ativos'}
+              </span>
+              <button
+                type="button"
+                disabled={activeFiltersCount === 0}
+                onClick={() => {
+                  setSelectedPlanos([]);
+                  setSelectedGerentes([]);
+                  setSelectedPlaybookTipo('todos');
+                  setComPlano('todos');
+                  setStatusEtapaPlano('criado');
+                  setStatusConclusao('todos');
+                  setSelectedFila('todos');
+                }}
+                className={`text-xs font-semibold transition-colors ${
+                  activeFiltersCount > 0
+                    ? 'text-rose-500 hover:text-rose-600 cursor-pointer'
+                    : 'text-text-secondary opacity-40 cursor-not-allowed'
+                }`}
+                id="btn-limpar-filtros"
+              >
+                Limpar filtros
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20 transition-all opacity-70 cursor-not-allowed"
+                id="btn-adicionar-filtro"
+                title="Adicionar filtro (Visual)"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Adicionar filtro
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 xl:gap-5" id="grid-filtros">
+            {/* Bloco Plano */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-plano">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Plano / Segmento
+              </span>
+              <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                {/* Multi-select Dropdown */}
+                <div className="relative flex-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlanoDropdownOpen(!planoDropdownOpen);
+                      setGerenteDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm text-text-primary shadow-sm hover:bg-bg-secondary/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    id="btn-dropdown-plano"
+                  >
+                    <span className="truncate">
+                      {selectedPlanos.length === 0
+                        ? 'Todos os planos'
+                        : selectedPlanos.length === 1
+                        ? selectedPlanos[0]
+                        : `${selectedPlanos.length} planos selecionados`}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 text-text-secondary transition-transform ${planoDropdownOpen ? 'rotate-180' : ''}`} id="chevron-plano" />
+                  </button>
+
+                  {planoDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setPlanoDropdownOpen(false)} id="overlay-plano" />
+                      <div className="absolute left-0 mt-1.5 z-20 w-full min-w-[240px] rounded-lg border border-border bg-surface p-2 shadow-lg max-h-60 overflow-y-auto scroll-minimal" id="menu-dropdown-plano">
+                        <input
+                          type="text"
+                          placeholder="Buscar plano..."
+                          value={planoSearch}
+                          onChange={(e) => setPlanoSearch(e.target.value)}
+                          className="w-full mb-2 rounded border border-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          id="input-busca-plano"
+                        />
+                        <div className="flex flex-col gap-1">
+                          {filteredPlanos.map((plano) => {
+                            const isSelected = selectedPlanos.includes(plano);
+                            return (
+                              <label
+                                key={plano}
+                                className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-bg-secondary/40 cursor-pointer text-sm text-text-primary"
+                                id={`label-opt-plano-${plano.replace(/\s+/g, '-').toLowerCase()}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setSelectedPlanos(selectedPlanos.filter(p => p !== plano));
+                                    } else {
+                                      setSelectedPlanos([...selectedPlanos, plano]);
+                                    }
+                                  }}
+                                  className="rounded border-border text-indigo-600 focus:ring-indigo-500/20 h-4 w-4"
+                                  id={`checkbox-plano-${plano.replace(/\s+/g, '-').toLowerCase()}`}
+                                />
+                                <span className="truncate">{plano}</span>
+                              </label>
+                            );
+                          })}
+                          {filteredPlanos.length === 0 && (
+                            <span className="text-xs text-text-secondary text-center py-2" id="no-plano-found">Nenhum plano encontrado</span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bloco Gerente */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-gerente">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Gerente
+              </span>
+              <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                {/* Multi-select Dropdown */}
+                <div className="relative flex-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGerenteDropdownOpen(!gerenteDropdownOpen);
+                      setPlanoDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm text-text-primary shadow-sm hover:bg-bg-secondary/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    id="btn-dropdown-gerente"
+                  >
+                    <span className="truncate">
+                      {selectedGerentes.length === 0
+                        ? 'Todos os gerentes'
+                        : selectedGerentes.length === 1
+                        ? selectedGerentes[0]
+                        : `${selectedGerentes.length} gerentes selecionados`}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 text-text-secondary transition-transform ${gerenteDropdownOpen ? 'rotate-180' : ''}`} id="chevron-gerente" />
+                  </button>
+
+                  {gerenteDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setGerenteDropdownOpen(false)} id="overlay-gerente" />
+                      <div className="absolute left-0 mt-1.5 z-20 w-full min-w-[240px] rounded-lg border border-border bg-surface p-2 shadow-lg max-h-60 overflow-y-auto scroll-minimal" id="menu-dropdown-gerente">
+                        <input
+                          type="text"
+                          placeholder="Buscar gerente..."
+                          value={gerenteSearch}
+                          onChange={(e) => setGerenteSearch(e.target.value)}
+                          className="w-full mb-2 rounded border border-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          id="input-busca-gerente"
+                        />
+                        <div className="flex flex-col gap-1">
+                          {filteredGerentes.map((gerente) => {
+                            const isSelected = selectedGerentes.includes(gerente);
+                            return (
+                              <label
+                                key={gerente}
+                                className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-bg-secondary/40 cursor-pointer text-sm text-text-primary"
+                                id={`label-opt-gerente-${gerente.replace(/\s+/g, '-').toLowerCase()}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setSelectedGerentes(selectedGerentes.filter(g => g !== gerente));
+                                    } else {
+                                      setSelectedGerentes([...selectedGerentes, gerente]);
+                                    }
+                                  }}
+                                  className="rounded border-border text-indigo-600 focus:ring-indigo-500/20 h-4 w-4"
+                                  id={`checkbox-gerente-${gerente.replace(/\s+/g, '-').toLowerCase()}`}
+                                />
+                                <span className="truncate">{gerente}</span>
+                              </label>
+                            );
+                          })}
+                          {filteredGerentes.length === 0 && (
+                            <span className="text-xs text-text-secondary text-center py-2" id="no-gerente-found">Nenhum gerente encontrado</span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bloco Origem do Playbook */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-playbook-tipo">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Origem do Playbook
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 h-[38px] shadow-sm" id="segmented-playbook-tipo">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlaybookTipo('todos')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedPlaybookTipo === 'todos'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-playbook-todos"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlaybookTipo('playbooks_novos')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedPlaybookTipo === 'playbooks_novos'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-playbook-novos"
+                >
+                  Playbooks novos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlaybookTipo('bau')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedPlaybookTipo === 'bau'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-playbook-bau"
+                >
+                  BAU
+                </button>
+              </div>
+            </div>
+
+            {/* Bloco Existência do Plano */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-com-plano">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Existência do Plano
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 h-[38px] shadow-sm" id="segmented-com-plano">
+                <button
+                  type="button"
+                  onClick={() => setComPlano('todos')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    comPlano === 'todos'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-com-plano-todos"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setComPlano('com_plano')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    comPlano === 'com_plano'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-com-plano-com"
+                >
+                  Com Plano
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setComPlano('sem_plano')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    comPlano === 'sem_plano'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-com-plano-sem"
+                >
+                  Sem Plano
+                </button>
+              </div>
+            </div>
+
+            {/* Bloco Etapa do Plano */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-status-etapa-plano">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Etapa do Plano
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 h-[38px] shadow-sm" id="segmented-status-etapa-plano">
+                <button
+                  type="button"
+                  onClick={() => setStatusEtapaPlano('criado')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusEtapaPlano === 'criado'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-etapa-criado"
+                >
+                  Plano Criado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusEtapaPlano('iniciado')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusEtapaPlano === 'iniciado'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-etapa-iniciado"
+                >
+                  Em Execução
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusEtapaPlano('finalizado')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusEtapaPlano === 'finalizado'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-etapa-finalizado"
+                >
+                  Finalizado
+                </button>
+              </div>
+            </div>
+
+            {/* Bloco Status de Conclusão */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-status-conclusao">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Status de Conclusão
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 h-[38px] shadow-sm overflow-x-auto" id="segmented-status-conclusao">
+                <button
+                  type="button"
+                  onClick={() => setStatusConclusao('todos')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusConclusao === 'todos'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-conclusao-todos"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusConclusao('sucesso')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusConclusao === 'sucesso'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-conclusao-sucesso"
+                >
+                  Sucesso
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusConclusao('sem_sucesso')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusConclusao === 'sem_sucesso'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-conclusao-sem-sucesso"
+                >
+                  Sem sucesso
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusConclusao('nao_classificado')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusConclusao === 'nao_classificado'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-status-conclusao-nao-classificado"
+                >
+                  Não classificado
+                </button>
+              </div>
+            </div>
+
+            {/* Bloco Fila */}
+            <div className="flex flex-col gap-2" id="bloco-filtro-fila">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Fila
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 h-[38px] shadow-sm" id="segmented-fila">
+                <button
+                  type="button"
+                  onClick={() => setSelectedFila('todos')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedFila === 'todos'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-fila-todos"
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFila('RETENÇÃO')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedFila === 'RETENÇÃO'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-fila-retencao"
+                >
+                  Retenção
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFila('EXPANSÃO')}
+                  className={`flex-1 rounded-md py-1 px-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedFila === 'EXPANSÃO'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                  id="btn-toggle-fila-expansao"
+                >
+                  Expansão
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Saved Filters Row */}
+          <div className="border-t border-border border-opacity-30 mt-5 pt-4 flex flex-col md:flex-row md:items-center justify-between gap-4" id="row-saved-filters">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1" id="saved-filters-list-container">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                <Bookmark className="h-3.5 w-3.5 text-indigo-500" /> Filtros salvos:
+              </span>
+
+              {loadingFilters ? (
+                <div className="flex items-center gap-1.5 text-xs text-text-secondary py-1" id="loading-filters-indicator">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+                  <span>Carregando filtros...</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2" id="saved-filters-chips">
+                  {savedFilters.map((filter) => {
+                    const isApplied =
+                      selectedPlanos.length === (filter.planos?.length || 0) &&
+                      selectedPlanos.every(p => filter.planos?.includes(p)) &&
+                      selectedGerentes.length === (filter.gerentes?.length || 0) &&
+                      selectedGerentes.every(g => filter.gerentes?.includes(g)) &&
+                      selectedPlaybookTipo === (filter.origem_playbook || 'todos') &&
+                      comPlano === (filter.plano_existente || 'todos') &&
+                      statusEtapaPlano === (filter.status_etapa_plano || 'criado') &&
+                      statusConclusao === (filter.status_conclusao_filtro || 'todos') &&
+                      selectedFila === (filter.fila || 'todos');
+
+                    return (
+                      <div
+                        key={filter.id}
+                        onClick={() => handleApplyFilter(filter)}
+                        className={`group flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border cursor-pointer transition-all ${
+                          isApplied
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            : 'bg-bg-secondary/20 text-text-primary border-border hover:bg-bg-secondary/50'
+                        }`}
+                        id={`saved-filter-chip-${filter.id}`}
+                      >
+                        <Bookmark className={`h-3 w-3 ${isApplied ? 'text-white' : 'text-indigo-500'}`} />
+                        <span className="truncate max-w-[150px]" title={filter.nome}>
+                          {filter.nome}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteFilter(filter.id, e)}
+                          className={`rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${
+                            isApplied ? 'text-indigo-100 hover:text-white' : 'text-text-secondary hover:text-rose-500'
+                          }`}
+                          title="Excluir filtro"
+                          id={`btn-delete-saved-filter-${filter.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {showSaveInput ? (
+                    <form onSubmit={handleSaveFilter} className="flex items-center gap-1.5 bg-card p-1 rounded-full border border-indigo-500 shadow-xs" id="form-salvar-filtro">
+                      <input
+                        type="text"
+                        placeholder="Nome do filtro..."
+                        value={newFilterName}
+                        onChange={(e) => setNewFilterName(e.target.value)}
+                        className="rounded-full border-none bg-transparent px-2.5 py-0.5 text-xs text-text-primary focus:outline-none w-36"
+                        autoFocus
+                        required
+                        id="input-novo-filtro"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSavingFilter || !newFilterName.trim()}
+                        className="rounded-full bg-indigo-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        id="btn-confirmar-salvar-filtro"
+                      >
+                        {isSavingFilter ? '...' : 'Salvar'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSaveInput(false);
+                          setNewFilterName('');
+                        }}
+                        className="rounded-full px-2 py-0.5 text-xs font-semibold text-text-secondary hover:bg-bg-secondary/40 transition-colors"
+                        id="btn-cancelar-salvar-filtro"
+                      >
+                        ✕
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={activeFiltersCount === 0}
+                      onClick={() => setShowSaveInput(true)}
+                      className="flex items-center justify-center h-7 w-7 rounded-full border border-dashed border-border text-text-secondary hover:text-indigo-600 hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      title={activeFiltersCount === 0 ? 'Selecione ao menos um filtro para salvar' : 'Salvar filtro atual'}
+                      id="btn-salvar-filtro-plus"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0" id="link-gerenciar-filtros">
+              <button
+                type="button"
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline opacity-70 cursor-not-allowed"
+                id="btn-gerenciar-filtros"
+                title="Gerenciar filtros salvos (Visual)"
+              >
+                Gerenciar filtros salvos
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Card: Coorte de Engajamento por Semana de Entrada */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm" id="card-coorte-engajamento">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6" id="header-coorte-engajamento">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-coorte-engajamento">
+                Coorte de Engajamento
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Média de engajamento (% de licenças engajadas) por semana de entrada por plano.
+              </p>
+            </div>
+          </div>
+
+          {cohortEngagementData.status === 'loading' ? (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="text-sm font-medium">Carregando dados da coorte...</p>
+            </div>
+          ) : cohortEngagementData.status === 'empty' || cohortEngagementData.cohorts.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+              <p className="font-semibold text-sm text-text-primary">Nenhuma coorte encontrada para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros de Plano, Gerente, Origem do Playbook ou Fila.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead>
+                  <tr className="border-b border-border bg-bg-secondary/30">
+                    <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                      Semanas
+                    </th>
+                    <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      Planos
+                    </th>
+                    <th className="py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                      Lic. Cobertas
+                    </th>
+                    {Array.from({ length: (cohortEngagementData.maxWeeks ?? 8) + 1 }).map((_, i) => (
+                      <th key={i} className="py-2.5 px-1.5 text-center min-w-[50px] font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        S{i}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {cohortEngagementData.cohorts.map((cohort, idx) => {
+                    const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                    const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                    return (
+                      <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                        <td className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                            <span>{cohort.label}</span>
+                          </div>
+                        </td>
+                        <td className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                          {cohort.planCount}
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap border-b border-border/40">
+                          {cohort.totalLicencas.toLocaleString('pt-BR')}
+                        </td>
+                        {cohort.weeksData.map((w) => {
+                          const isNull = w.avgEngagement === null;
+                          const valDisplay = isNull
+                            ? ''
+                            : `${Number(w.avgEngagement).toFixed(1).replace('.', ',')}%`;
+
+                          const heat = isNull ? { style: {}, className: '' } : getCohortHeatmapStyle(w.avgEngagement);
+
+                          return (
+                            <td
+                              key={w.weekIndex}
+                              style={heat.style}
+                              className={`py-2 px-1.5 text-center text-xs whitespace-nowrap transition-colors border-b border-border/40 ${heat.className}`}
+                            >
+                              {valDisplay}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Rodapé: Linhas de resumo das médias de 4 semanas e 12 semanas */}
+                {cohortEngagementData.summary4Weeks && cohortEngagementData.summary12Weeks && (
+                  <tfoot className="border-t-2 border-border/80 bg-bg-secondary/30">
+                    {/* Linha Média Últimas 4 Semanas */}
+                    <tr className="bg-bg-secondary/20 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px] border-b border-border/60">
+                        <div className="flex items-center gap-1" title={cohortEngagementData.summary4Weeks.rangeLabel ? `Período: ${cohortEngagementData.summary4Weeks.rangeLabel}` : undefined}>
+                          <TrendingUp className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>Média 4 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortEngagementData.summary4Weeks.count > 0 ? cohortEngagementData.summary4Weeks.planCountSum : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-text-secondary whitespace-nowrap border-b border-border/60">
+                        {cohortEngagementData.summary4Weeks.count > 0 ? cohortEngagementData.summary4Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
+                      </td>
+                      {cohortEngagementData.summary4Weeks.averages.map((avg, i) => {
+                        const heat = avg !== null ? getCohortHeatmapStyle(avg) : { style: {}, className: '' };
+                        return (
+                          <td
+                            key={i}
+                            style={heat.style}
+                            className={`py-2 px-1.5 text-center text-xs whitespace-nowrap border-b border-border/60 ${heat.className}`}
+                          >
+                            {avg !== null ? `${avg.toFixed(1).replace('.', ',')}%` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {/* Linha Média Últimas 12 Semanas */}
+                    <tr className="bg-bg-secondary/40 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px]">
+                        <div className="flex items-center gap-1" title={cohortEngagementData.summary12Weeks.rangeLabel ? `Período: ${cohortEngagementData.summary12Weeks.rangeLabel}` : undefined}>
+                          <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Média 12 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortEngagementData.summary12Weeks.count > 0 ? cohortEngagementData.summary12Weeks.planCountSum : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-text-secondary whitespace-nowrap">
+                        {cohortEngagementData.summary12Weeks.count > 0 ? cohortEngagementData.summary12Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
+                      </td>
+                      {cohortEngagementData.summary12Weeks.averages.map((avg, i) => {
+                        const heat = avg !== null ? getCohortHeatmapStyle(avg) : { style: {}, className: '' };
+                        return (
+                          <td
+                            key={i}
+                            style={heat.style}
+                            className={`py-2 px-1.5 text-center text-xs whitespace-nowrap ${heat.className}`}
+                          >
+                            {avg !== null ? `${avg.toFixed(1).replace('.', ',')}%` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Card: Coorte de Licenças por Semana de Entrada */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm" id="card-coorte-licencas">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6" id="header-coorte-licencas">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-coorte-licencas">
+                Coorte de Licenças
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Total de licenças por safra de entrada, ao longo das semanas.
+              </p>
+            </div>
+          </div>
+
+          {cohortLicencasData.status === 'loading' ? (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="text-sm font-medium">Carregando dados da coorte...</p>
+            </div>
+          ) : cohortLicencasData.status === 'empty' || cohortLicencasData.cohorts.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+              <p className="font-semibold text-sm text-text-primary">Nenhuma coorte encontrada para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros de Plano, Gerente, Origem do Playbook ou Fila.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead>
+                  <tr className="border-b border-border bg-bg-secondary/30">
+                    <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                      Semanas
+                    </th>
+                    <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      Planos
+                    </th>
+                    {Array.from({ length: (cohortLicencasData.maxWeeks ?? 8) + 1 }).map((_, i) => (
+                      <th key={i} className="py-2.5 px-1.5 text-right min-w-[50px] font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        S{i}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {cohortLicencasData.cohorts.map((cohort, idx) => {
+                    const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                    const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                    return (
+                      <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                        <td className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                            <span>{cohort.label}</span>
+                          </div>
+                        </td>
+                        <td className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                          {cohort.planCount}
+                        </td>
+                        {cohort.weeksData.map((w) => {
+                          const isNull = w.sumLicencas === null;
+                          const valDisplay = isNull
+                            ? ''
+                            : Number(w.sumLicencas).toLocaleString('pt-BR');
+
+                          return (
+                            <td
+                              key={w.weekIndex}
+                              className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-medium text-text-primary border-b border-border/40"
+                            >
+                              {valDisplay}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Rodapé: Linhas de resumo das médias de 4 semanas e 12 semanas */}
+                {cohortLicencasData.summary4Weeks && cohortLicencasData.summary12Weeks && (
+                  <tfoot className="border-t-2 border-border/80 bg-bg-secondary/30">
+                    {/* Linha Média Últimas 4 Semanas */}
+                    <tr className="bg-bg-secondary/20 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px] border-b border-border/60">
+                        <div className="flex items-center gap-1" title={cohortLicencasData.summary4Weeks.rangeLabel ? `Período: ${cohortLicencasData.summary4Weeks.rangeLabel}` : undefined}>
+                          <TrendingUp className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>Média 4 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortLicencasData.summary4Weeks.count > 0 ? cohortLicencasData.summary4Weeks.planCountSum : '—'}
+                      </td>
+                      {cohortLicencasData.summary4Weeks.averages.map((avg, i) => {
+                        return (
+                          <td
+                            key={i}
+                            className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-semibold text-text-primary border-b border-border/60"
+                          >
+                            {avg !== null ? Number(avg).toLocaleString('pt-BR') : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {/* Linha Média Últimas 12 Semanas */}
+                    <tr className="bg-bg-secondary/40 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px]">
+                        <div className="flex items-center gap-1" title={cohortLicencasData.summary12Weeks.rangeLabel ? `Período: ${cohortLicencasData.summary12Weeks.rangeLabel}` : undefined}>
+                          <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Média 12 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortLicencasData.summary12Weeks.count > 0 ? cohortLicencasData.summary12Weeks.planCountSum : '—'}
+                      </td>
+                      {cohortLicencasData.summary12Weeks.averages.map((avg, i) => {
+                        return (
+                          <td
+                            key={i}
+                            className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-semibold text-text-primary"
+                          >
+                            {avg !== null ? Number(avg).toLocaleString('pt-BR') : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Card: Coorte de Variação de Licenças */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm" id="card-coorte-variacao-licencas">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6" id="header-coorte-variacao-licencas">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-coorte-variacao-licencas">
+                Coorte de Variação de Licenças
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Crescimento ou queda de licenças em relação à semana anterior, por safra.
+              </p>
+            </div>
+          </div>
+
+          {cohortLicencasData.status === 'loading' ? (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="text-sm font-medium">Carregando dados da coorte...</p>
+            </div>
+          ) : cohortLicencasData.status === 'empty' || cohortLicencasData.cohorts.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+              <p className="font-semibold text-sm text-text-primary">Nenhuma coorte encontrada para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros de Plano, Gerente, Origem do Playbook ou Fila.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead>
+                  <tr className="border-b border-border bg-bg-secondary/30">
+                    <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                      Semanas
+                    </th>
+                    <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      Planos
+                    </th>
+                    {Array.from({ length: (cohortLicencasData.maxWeeks ?? 8) + 1 }).map((_, i) => (
+                      <th key={i} className="py-2.5 px-1.5 text-right min-w-[50px] font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        S{i}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {cohortLicencasData.cohorts.map((cohort, idx) => {
+                    const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                    const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                    return (
+                      <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                        <td className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                            <span>{cohort.label}</span>
+                          </div>
+                        </td>
+                        <td className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                          {cohort.planCount}
+                        </td>
+                        {cohort.weeksData.map((w, colIdx) => {
+                          // S0 é sempre marco zero
+                          if (colIdx === 0) {
+                            const isNull = w.sumLicencas === null;
+                            return (
+                              <td
+                                key={w.weekIndex}
+                                className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-medium text-text-secondary border-b border-border/40"
+                              >
+                                {isNull ? '' : '0'}
+                              </td>
+                            );
+                          }
+
+                          // Colunas S1 em diante: delta em relação à coluna anterior
+                          const prevVal = cohort.weeksData[colIdx - 1]?.sumLicencas;
+                          const currVal = w.sumLicencas;
+
+                          // Se a coluna atual ou a anterior não tiver dado, fica vazia
+                          if (currVal === null || currVal === undefined || prevVal === null || prevVal === undefined) {
+                            return (
+                              <td
+                                key={w.weekIndex}
+                                className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-medium text-text-secondary border-b border-border/40"
+                              >
+                                
+                              </td>
+                            );
+                          }
+
+                          const delta = currVal - prevVal;
+                          let textClass = 'text-text-secondary font-medium';
+                          let displayVal = '0';
+
+                          if (delta > 0) {
+                            textClass = 'text-emerald-600 dark:text-emerald-400 font-semibold';
+                            displayVal = `+${delta.toLocaleString('pt-BR')}`;
+                          } else if (delta < 0) {
+                            textClass = 'text-rose-600 dark:text-rose-400 font-semibold';
+                            displayVal = `${delta.toLocaleString('pt-BR')}`;
+                          }
+
+                          return (
+                            <td
+                              key={w.weekIndex}
+                              className={`py-2 px-1.5 text-right text-xs whitespace-nowrap border-b border-border/40 ${textClass}`}
+                            >
+                              {displayVal}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Rodapé: Linhas de resumo das médias de 4 semanas e 12 semanas (Delta) */}
+                {cohortLicencasData.summary4Weeks && cohortLicencasData.summary12Weeks && (
+                  <tfoot className="border-t-2 border-border/80 bg-bg-secondary/30">
+                    {/* Linha Média Últimas 4 Semanas */}
+                    <tr className="bg-bg-secondary/20 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px] border-b border-border/60">
+                        <div className="flex items-center gap-1" title={cohortLicencasData.summary4Weeks.rangeLabel ? `Período: ${cohortLicencasData.summary4Weeks.rangeLabel}` : undefined}>
+                          <TrendingUp className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>Média 4 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortLicencasData.summary4Weeks.count > 0 ? cohortLicencasData.summary4Weeks.planCountSum : '—'}
+                      </td>
+                      {cohortLicencasData.summary4Weeks.averages.map((avg, i) => {
+                        if (i === 0) {
+                          return (
+                            <td
+                              key={i}
+                              className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-medium text-text-secondary border-b border-border/60"
+                            >
+                              {avg !== null ? '0' : '—'}
+                            </td>
+                          );
+                        }
+
+                        const prevAvg = cohortLicencasData.summary4Weeks!.averages[i - 1];
+                        const currAvg = avg;
+
+                        if (currAvg === null || currAvg === undefined || prevAvg === null || prevAvg === undefined) {
+                          return (
+                            <td
+                              key={i}
+                              className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-semibold text-text-secondary border-b border-border/60"
+                            >
+                              —
+                            </td>
+                          );
+                        }
+
+                        const delta = currAvg - prevAvg;
+                        let textClass = 'text-text-secondary font-semibold';
+                        let displayVal = '0';
+
+                        if (delta > 0) {
+                          textClass = 'text-emerald-600 dark:text-emerald-400 font-bold';
+                          displayVal = `+${delta.toLocaleString('pt-BR')}`;
+                        } else if (delta < 0) {
+                          textClass = 'text-rose-600 dark:text-rose-400 font-bold';
+                          displayVal = `${delta.toLocaleString('pt-BR')}`;
+                        }
+
+                        return (
+                          <td
+                            key={i}
+                            className={`py-2 px-1.5 text-right text-xs whitespace-nowrap border-b border-border/60 ${textClass}`}
+                          >
+                            {displayVal}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {/* Linha Média Últimas 12 Semanas */}
+                    <tr className="bg-bg-secondary/40 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px]">
+                        <div className="flex items-center gap-1" title={cohortLicencasData.summary12Weeks.rangeLabel ? `Período: ${cohortLicencasData.summary12Weeks.rangeLabel}` : undefined}>
+                          <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Média 12 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortLicencasData.summary12Weeks.count > 0 ? cohortLicencasData.summary12Weeks.planCountSum : '—'}
+                      </td>
+                      {cohortLicencasData.summary12Weeks.averages.map((avg, i) => {
+                        if (i === 0) {
+                          return (
+                            <td
+                              key={i}
+                              className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-medium text-text-secondary"
+                            >
+                              {avg !== null ? '0' : '—'}
+                            </td>
+                          );
+                        }
+
+                        const prevAvg = cohortLicencasData.summary12Weeks!.averages[i - 1];
+                        const currAvg = avg;
+
+                        if (currAvg === null || currAvg === undefined || prevAvg === null || prevAvg === undefined) {
+                          return (
+                            <td
+                              key={i}
+                              className="py-2 px-1.5 text-right text-xs whitespace-nowrap font-semibold text-text-secondary"
+                            >
+                              —
+                            </td>
+                          );
+                        }
+
+                        const delta = currAvg - prevAvg;
+                        let textClass = 'text-text-secondary font-semibold';
+                        let displayVal = '0';
+
+                        if (delta > 0) {
+                          textClass = 'text-emerald-600 dark:text-emerald-400 font-bold';
+                          displayVal = `+${delta.toLocaleString('pt-BR')}`;
+                        } else if (delta < 0) {
+                          textClass = 'text-rose-600 dark:text-rose-400 font-bold';
+                          displayVal = `${delta.toLocaleString('pt-BR')}`;
+                        }
+
+                        return (
+                          <td
+                            key={i}
+                            className={`py-2 px-1.5 text-right text-xs whitespace-nowrap ${textClass}`}
+                          >
+                            {displayVal}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Card: Coorte de Diagnóstico de Engajamento */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm" id="card-coorte-diagnostico-engajamento">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6" id="header-coorte-diagnostico-engajamento">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-coorte-diagnostico-engajamento">
+                Coorte de Diagnóstico de Engajamento
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5" id="desc-coorte-diagnostico-engajamento">
+                Separa engajamento que cresceu de verdade do engajamento que só subiu por perda de licenças desengajadas — e o inverso.
+              </p>
+            </div>
+          </div>
+
+          {cohortDiagnosticoData.status === 'loading' ? (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="text-sm font-medium">Carregando dados do diagnóstico...</p>
+            </div>
+          ) : cohortDiagnosticoData.status === 'empty' || cohortDiagnosticoData.cohorts.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+              <p className="font-semibold text-sm text-text-primary">Nenhuma coorte encontrada para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros de Plano, Gerente, Origem do Playbook ou Fila.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead>
+                  <tr className="border-b border-border bg-bg-secondary/30">
+                    <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                      Semanas
+                    </th>
+                    <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      Planos
+                    </th>
+                    {Array.from({ length: (cohortDiagnosticoData.maxWeeks ?? 8) + 1 }).map((_, i) => (
+                      <th key={i} className="py-2.5 px-1.5 text-center min-w-[68px] font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        S{i}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {cohortDiagnosticoData.cohorts.map((cohort, idx) => {
+                    const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                    const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                    return (
+                      <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                        <td className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                            <span>{cohort.label}</span>
+                          </div>
+                        </td>
+                        <td className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                          {cohort.planCount}
+                        </td>
+                        {cohort.weeksData.map((w) => {
+                          if (w.category === 'sem_dado' || w.avgEngagement === null) {
+                            return (
+                              <td
+                                key={w.weekIndex}
+                                className="py-2 px-1.5 text-center text-xs whitespace-nowrap border-b border-border/40 text-text-secondary"
+                              >
+                                —
+                              </td>
+                            );
+                          }
+
+                          const engDisplay = `${w.avgEngagement.toFixed(1).replace('.', ',')}%`;
+
+                          // S0: marco zero (neutro/cinza)
+                          if (w.weekIndex === 0 || w.category === 'marco_zero') {
+                            return (
+                              <td
+                                key={w.weekIndex}
+                                className="py-1.5 px-1.5 text-center text-xs whitespace-nowrap border-b border-border/40 bg-bg-secondary/30"
+                              >
+                                <div className="font-semibold text-text-primary text-[11px] leading-tight">
+                                  {engDisplay}
+                                </div>
+                                <div className="text-[9px] text-text-secondary leading-tight mt-0.5">
+                                  marco zero
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // S1+: Estilo por Categoria
+                          let bgClass = 'bg-bg-secondary/20';
+                          let titleText = 'Estável';
+                          let deltaLicText = '';
+                          let mainTextClass = 'text-text-primary';
+                          let subTextClass = 'text-text-secondary';
+
+                          if (w.deltaLic !== null && w.deltaLic !== undefined) {
+                            const sign = w.deltaLic > 0 ? '+' : '';
+                            deltaLicText = `lic ${sign}${w.deltaLic.toLocaleString('pt-BR')}`;
+                          }
+
+                          if (w.category === 'crescimento_real') {
+                            bgClass = 'bg-emerald-100 dark:bg-emerald-950/50';
+                            mainTextClass = 'text-emerald-900 dark:text-emerald-200';
+                            subTextClass = 'text-emerald-700 dark:text-emerald-400';
+                            titleText = 'Crescimento real: mais licenças e mais engajamento';
+                          } else if (w.category === 'diluicao_saudavel') {
+                            bgClass = 'bg-blue-100 dark:bg-blue-950/50';
+                            mainTextClass = 'text-blue-900 dark:text-blue-200';
+                            subTextClass = 'text-blue-700 dark:text-blue-400';
+                            titleText = 'Diluição saudável: vendeu novas licenças ainda não ativadas';
+                          } else if (w.category === 'engajamento_inflado') {
+                            bgClass = 'bg-amber-100 dark:bg-amber-950/50';
+                            mainTextClass = 'text-amber-900 dark:text-amber-200';
+                            subTextClass = 'text-amber-700 dark:text-amber-400';
+                            titleText = 'Engajamento inflado: perdeu licença desengajada (base encolheu)';
+                          } else if (w.category === 'perda_real') {
+                            bgClass = 'bg-rose-100 dark:bg-rose-950/50';
+                            mainTextClass = 'text-rose-900 dark:text-rose-200';
+                            subTextClass = 'text-rose-700 dark:text-rose-400';
+                            titleText = 'Perda real: perda de licenças e queda de engajamento';
+                          } else {
+                            // Estável
+                            bgClass = 'bg-bg-secondary/30';
+                            mainTextClass = 'text-text-primary';
+                            subTextClass = 'text-text-secondary';
+                            titleText = 'Estável: variação < 1 em licenças ou engajamento';
+                          }
+
+                          return (
+                            <td
+                              key={w.weekIndex}
+                              title={titleText}
+                              className={`py-1.5 px-1 text-center text-xs whitespace-nowrap border-b border-border/40 ${bgClass}`}
+                            >
+                              <div className={`font-bold text-[11px] leading-tight ${mainTextClass}`}>
+                                {engDisplay}
+                              </div>
+                              <div className={`text-[9px] font-medium leading-tight mt-0.5 ${subTextClass}`}>
+                                {deltaLicText || '—'}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Legenda permanente obrigatória */}
+          <div className="mt-6 pt-5 border-t border-border" id="legenda-coorte-diagnostico">
+            <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider mb-3">
+              Legenda do Diagnóstico de Engajamento
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
+                <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-emerald-900 dark:text-emerald-200">Crescimento real</span>
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                    Mais licenças vendidas e mais engajamento, ao mesmo tempo.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50">
+                <span className="inline-block w-3 h-3 rounded-full bg-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-blue-900 dark:text-blue-200">Diluição saudável</span>
+                  <p className="text-[11px] text-blue-800 dark:text-blue-300 mt-0.5">
+                    Vendeu licença nova; engajamento cai só porque ela ainda não foi ativada.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
+                <span className="inline-block w-3 h-3 rounded-full bg-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-amber-900 dark:text-amber-200">Engajamento inflado por churn</span>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                    Perdeu licença desengajada; o % sobe mas a base encolheu.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50">
+                <span className="inline-block w-3 h-3 rounded-full bg-rose-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-rose-900 dark:text-rose-200">Perda real</span>
+                  <p className="text-[11px] text-rose-800 dark:text-rose-300 mt-0.5">
+                    Perdendo licença engajada; queda genuína.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-bg-secondary/40 border border-border">
+                <span className="inline-block w-3 h-3 rounded-full bg-slate-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-text-primary">Estável</span>
+                  <p className="text-[11px] text-text-secondary mt-0.5">
+                    Variação pequena demais (&lt; 1 em licenças ou engajamento) para classificar.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card: Histórico de Licenças e Engajamento (Redesenhado) */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col gap-6" id="card-historico-licencas-chart">
+          {/* Header + Dropdown de Janela de Importação */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" id="header-historico-licencas">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-historico-licencas">
+                Histórico de Licenças e Engajamento
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5" id="desc-historico-licencas">
+                Evolução temporal do total de licenças, licenças engajadas e taxa de engajamento por data de importação.
+              </p>
+            </div>
+
+            {/* Dropdown: Últimas X importações */}
+            <div className="shrink-0" id="wrapper-select-historico-import-count">
+              <select
+                value={historicImportCount}
+                onChange={(e) => setHistoricImportCount(e.target.value as '4' | '8' | 'all')}
+                className="h-9 px-3 bg-bg-primary border border-border rounded-lg text-xs font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                id="select-historico-import-count"
+              >
+                <option value="4">Últimas 4 importações</option>
+                <option value="8">Últimas 8 importações</option>
+                <option value="all">Todas as importações</option>
+              </select>
+            </div>
+          </div>
+
+          {loadingData ? (
+            <div className="py-16 text-center text-text-secondary flex flex-col items-center justify-center" id="loading-historico-licencas">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mb-2" />
+              <p className="text-xs font-medium">Carregando histórico...</p>
+            </div>
+          ) : errorMsg ? (
+            <div className="py-12 text-center text-rose-500 text-xs font-medium" id="error-historico-licencas">
+              {errorMsg}
+            </div>
+          ) : !partnerSnapshotsData.hasData ? (
+            <div className="py-12 text-center text-text-secondary bg-bg-secondary/20 rounded-lg p-6" id="empty-historico-licencas">
+              <p className="font-semibold text-sm text-text-primary">Nenhum snapshot encontrado para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros acima para expandir a busca.</p>
+            </div>
+          ) : (
+            <>
+              {/* 3 KPIs no topo (Valores da importação mais recente) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" id="kpis-historico-licencas">
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-licencas-totais">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      Licenças Totais
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-text-primary tracking-tight">
+                    {partnerSnapshotsData.latestKpis.totalLicencas.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-licencas-engajadas">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      Licenças Engajadas
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
+                    {partnerSnapshotsData.latestKpis.engajadasLicencas.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-taxa-engajamento">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      % de Engajamento (média)
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-amber-600 dark:text-amber-400 tracking-tight">
+                    {partnerSnapshotsData.latestKpis.taxaEngajamento.toFixed(1).replace('.', ',')}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Legenda abaixo dos KPIs com ícones de linha */}
+              <div className="flex flex-wrap items-center justify-center gap-6 pt-2 pb-1 border-y border-border/40 text-xs font-medium text-text-secondary" id="legenda-historico-licencas">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 bg-indigo-600 rounded-full" />
+                  <span className="text-text-primary font-semibold">Licenças Totais</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 bg-emerald-500 rounded-full" />
+                  <span className="text-text-primary font-semibold">Licenças Engajadas</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 border-b-2 border-dashed border-amber-500" />
+                  <span className="text-text-primary font-semibold">% de Engajamento</span>
+                </div>
+              </div>
+
+              {/* Gráfico de Linha com Eixo Duplo */}
+              <div className="h-[380px] w-full pt-2" id="historico-licencas-chart-container">
+                <Line
+                  data={chartLicenseHistoryData}
+                  options={chartLicenseHistoryOptions}
+                  plugins={chartLicenseHistoryPlugins}
+                />
+              </div>
+
+              {/* Insight calculated no rodapé */}
+              {partnerSnapshotsData.insightText && (
+                <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/50 dark:border-indigo-900/40 dark:bg-indigo-950/20 p-3.5 flex items-start gap-3 text-xs text-indigo-900 dark:text-indigo-200" id="insight-historico-licencas">
+                  <TrendingUp className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                  <span className="font-medium leading-relaxed">
+                    {partnerSnapshotsData.insightText}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Section: Evolução das Faixas de Engajamento */}
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col" id="card-evolucao-faixas-engajamento">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" id="header-evolucao-faixas-engajamento">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-evolucao-faixas-engajamento">
+                Evolução das Faixas de Engajamento
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5" id="desc-evolucao-faixas-engajamento">
+                Percentual de parceiros por faixa de engajamento ao longo das importações.
+              </p>
+            </div>
+
+            {/* Dropdown: Últimas X importações */}
+            <div className="shrink-0" id="wrapper-select-tiers-import-count">
+              <select
+                value={historicImportCount}
+                onChange={(e) => setHistoricImportCount(e.target.value as '4' | '8' | 'all')}
+                className="h-9 px-3 bg-bg-primary border border-border rounded-lg text-xs font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                id="select-tiers-import-count"
+              >
+                <option value="4">Últimas 4 importações</option>
+                <option value="8">Últimas 8 importações</option>
+                <option value="all">Todas as importações</option>
+              </select>
+            </div>
+          </div>
+
+          {loadingData ? (
+            <div className="py-16 text-center text-text-secondary flex flex-col items-center justify-center" id="loading-evolucao-faixas-engajamento">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mb-2" />
+              <p className="text-xs font-medium">Carregando evolução das faixas...</p>
+            </div>
+          ) : errorMsg ? (
+            <div className="py-12 text-center text-rose-500 text-xs font-medium" id="error-evolucao-faixas-engajamento">
+              {errorMsg}
+            </div>
+          ) : !engagementTiersData.hasData ? (
+            <div className="py-12 text-center text-text-secondary bg-bg-secondary/20 rounded-lg p-6" id="empty-evolucao-faixas-engajamento">
+              <p className="font-semibold text-sm text-text-primary">Nenhum snapshot encontrado para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros acima para expandir a busca.</p>
+            </div>
+          ) : (
+            <>
+              {/* 3 KPIs no topo (Valores da importação mais recente) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" id="kpis-evolucao-faixas-engajamento">
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-tier-critico">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      % &lt; 50% (Crítico)
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-rose-600 dark:text-rose-400 tracking-tight">
+                    {engagementTiersData.latestKpis.pctAbaixo50.toFixed(1).replace('.', ',')}%
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-tier-abaixo-meta">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      % &lt; 75% (Abaixo da Meta)
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-amber-600 dark:text-amber-400 tracking-tight">
+                    {engagementTiersData.latestKpis.pctAbaixo75.toFixed(1).replace('.', ',')}%
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-bg-secondary/15 p-4 flex flex-col justify-between" id="kpi-tier-meta-atingida">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      % ≥ 75% (Meta Atingida)
+                    </span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
+                    {engagementTiersData.latestKpis.pctAcima75.toFixed(1).replace('.', ',')}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Legenda com ícones de linha */}
+              <div className="flex flex-wrap items-center justify-center gap-6 pt-2 pb-1 border-y border-border/40 text-xs font-medium text-text-secondary" id="legenda-evolucao-faixas-engajamento">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 bg-rose-500 rounded-full" />
+                  <span className="text-text-primary font-semibold">% &lt; 50%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 bg-amber-500 rounded-full" />
+                  <span className="text-text-primary font-semibold">% &lt; 75% (Cumulativo)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0.5 bg-emerald-500 rounded-full" />
+                  <span className="text-text-primary font-semibold">% ≥ 75%</span>
+                </div>
+              </div>
+
+              {/* Gráfico de Linha */}
+              <div className="h-[380px] w-full pt-2" id="evolucao-faixas-chart-container">
+                <Line
+                  data={chartEngagementTiersData}
+                  options={chartEngagementTiersOptions}
+                  plugins={chartEngagementTiersPlugins}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Section: Ranking de Planos por Tipo */}
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col" id="section-ranking-planos-retencao">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold tracking-tight text-text-primary" id="section-ranking-planos-retencao-title">
+              Ranking de Planos por Tipo
+            </h2>
+            <p className="text-sm text-text-secondary mt-1">
+              Comparativo de adesão por classificação de plano, com base no segmento no momento da criação do plano.
+            </p>
+          </div>
+
+          {retentionPlanRanking.status === 'loading' ? (
+            <div className="flex h-64 items-center justify-center" id="ranking-planos-retencao-loading">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <span className="text-sm text-text-secondary">Carregando ranking...</span>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[480px] scroll-minimal rounded-lg border border-border border-opacity-40" id="ranking-planos-retencao-table-wrapper">
+              <table className="w-full text-left text-sm border-collapse" id="ranking-planos-retencao-table">
+                <thead>
+                  <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider pl-4 border-b border-border border-opacity-40 w-16" id="th-ranking-pos">
+                      Pos
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-border border-opacity-40" id="th-ranking-tipo">
+                      Tipo de Plano
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-ranking-parceiros">
+                      Total de Parceiros
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right pr-4 border-b border-border border-opacity-40" id="th-ranking-planos">
+                      # de Planos Criados
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border divide-opacity-30">
+                  {retentionPlanRanking.ranking.map((item, idx) => (
+                    <tr key={item.tipo} className="hover:bg-bg-secondary/40 odd:bg-card even:bg-bg-secondary/10 transition-colors" id={`row-ranking-${item.tipo}`}>
+                      <td className="py-4 px-4 whitespace-nowrap text-xs font-bold text-text-secondary pl-4" id={`cell-ranking-pos-${idx}`}>
+                        #{idx + 1}
+                      </td>
+                      <td className="py-4 px-4 whitespace-nowrap" id={`cell-ranking-tipo-${idx}`}>
+                        <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/50 rounded-md text-xs font-bold">
+                          {item.tipo}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right text-text-secondary font-medium whitespace-nowrap" id={`cell-ranking-parceiros-${idx}`}>
+                        {item.totalPartners}
+                      </td>
+                      <td className="py-4 px-4 text-right font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap pr-4" id={`cell-ranking-planos-${idx}`}>
+                        {item.createdPlans}
+                      </td>
+                    </tr>
+                  ))}
+                  {retentionPlanRanking.ranking.length === 0 && (
+                    <tr id="row-no-ranking">
+                      <td colSpan={4} className="py-8 text-center text-text-secondary">
+                        Nenhum plano encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col" id="section-execucao-gerente">
+          <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-text-primary" id="section-execucao-gerente-title">
+                Execução por Gerente
+              </h2>
+              <p className="text-xs text-text-secondary mt-1">
+                Cobertura de planos e nível de atraso de tarefas por gerente da base de parceiros.
+              </p>
+            </div>
+          </div>
+
+          {loadingData ? (
+            <div className="flex h-64 items-center justify-center" id="execucao-gerente-loading">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <span className="text-sm text-text-secondary">Carregando dados consolidados...</span>
+              </div>
+            </div>
+          ) : errorMsg ? (
+            <div className="flex h-64 items-center justify-center text-sm text-red-500" id="execucao-gerente-error">
+              {errorMsg}
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[480px] scroll-minimal rounded-lg border border-border border-opacity-40" id="execucao-gerente-table-wrapper">
+              <table className="w-full text-left text-sm border-collapse" id="execucao-gerente-table">
+                <thead>
+                  <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider pl-4 border-b border-border border-opacity-40" id="th-gerente">
+                      Gerente
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-parceiros">
+                      # Parceiros
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-planos">
+                      Planos Ativos
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-cobertura">
+                      % Cobertura
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right text-red-500 border-b border-border border-opacity-40" id="th-atrasados">
+                      # Atrasados
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right text-emerald-600 pr-4 border-b border-border border-opacity-40" id="th-emdia">
+                      # Em Dia
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border divide-opacity-30">
+                  {managerStats.map((stat) => (
+                    <tr key={stat.id} className="hover:bg-bg-secondary/40 odd:bg-card even:bg-bg-secondary/10 transition-colors" id={`row-gerente-${stat.id}`}>
+                      <td className="py-4 px-4 font-semibold text-text-primary pl-4" id={`cell-nome-${stat.id}`}>
+                        {stat.nome}
+                      </td>
+                      <td className="py-4 px-4 text-right text-text-secondary font-medium" id={`cell-partcount-${stat.id}`}>
+                        {stat.partnersCount}
+                      </td>
+                      <td className="py-4 px-4 text-right font-bold text-text-primary" id={`cell-plancount-${stat.id}`}>
+                        {stat.plansCount}
+                      </td>
+                      <td className="py-4 px-4 text-right" id={`cell-coverage-${stat.id}`}>
+                        {stat.coverage !== null ? (
+                          <div className="flex items-center justify-end gap-3">
+                            <span className={`text-sm font-bold ${
+                              stat.coverage < 50 ? 'text-rose-600 dark:text-rose-400' : stat.coverage < 80 ? 'text-amber-500' : 'text-emerald-600'
+                            }`}>
+                              {stat.coverage.toFixed(1)}%
+                            </span>
+                            <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden hidden sm:block">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  stat.coverage < 50 ? 'bg-rose-500' : stat.coverage < 80 ? 'bg-amber-400' : 'bg-emerald-500'
+                                }`} 
+                                style={{ width: `${Math.min(100, stat.coverage)}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-text-secondary text-sm font-medium">—</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-4 text-right" id={`cell-delayed-${stat.id}`}>
+                        <div className="flex justify-end">
+                          {stat.delayedCount > 0 ? (
+                            <span className="inline-flex items-center justify-center rounded-full bg-red-50 dark:bg-red-950/20 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 border border-red-100/50 dark:border-red-900/30">
+                              {stat.delayedCount}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center rounded-full bg-gray-50 dark:bg-gray-900 px-2.5 py-1 text-xs font-semibold text-gray-400 dark:text-gray-500 border border-gray-100 dark:border-gray-800/30">
+                              0
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-right text-text-secondary pr-4 font-semibold" id={`cell-ontime-${stat.id}`}>
+                        {stat.onTimeCount}
+                      </td>
+                    </tr>
+                  ))}
+                  {managerStats.length === 0 && (
+                    <tr id="row-no-gerentes">
+                      <td colSpan={6} className="py-8 text-center text-text-secondary">
+                        Nenhum gerente encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Section 2: Planos por Segmento */}
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm h-full flex flex-col" id="section-planos-segmento">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold tracking-tight text-text-primary" id="section-planos-segmento-title">
+              Planos por Segmento
+            </h2>
+            <p className="text-sm text-text-secondary mt-1">
+              Distribuição e cobertura de planos ativos segmentados pela classificação do parceiro.
+            </p>
+          </div>
+
+          {loadingData ? (
+            <div className="flex h-64 items-center justify-center" id="planos-segmento-loading">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <span className="text-sm text-text-secondary">Carregando dados dos segmentos...</span>
+              </div>
+            </div>
+          ) : errorMsg ? (
+            <div className="flex h-64 items-center justify-center text-sm text-red-500" id="planos-segmento-error">
+              {errorMsg}
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[480px] scroll-minimal flex-1 rounded-lg border border-border border-opacity-40" id="planos-segmento-table-wrapper">
+              <table className="w-full text-left text-sm border-collapse" id="planos-segmento-table">
+                <thead>
+                  <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider pl-4 border-b border-border border-opacity-40" id="th-segmento">
+                      Segmento
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-seg-parceiros">
+                      # Parceiros
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-seg-planos">
+                      Planos Ativos
+                    </th>
+                    <th className="sticky top-0 bg-card z-10 py-3.5 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right pr-4 border-b border-border border-opacity-40" id="th-seg-cobertura">
+                      % Cobertura
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border divide-opacity-30">
+                  {segmentStats.map((stat, idx) => (
+                    <tr key={idx} className="hover:bg-bg-secondary/40 odd:bg-card even:bg-bg-secondary/10 transition-colors" id={`row-segmento-${idx}`}>
+                      <td className="py-4 px-4 font-semibold text-text-primary pl-4" id={`cell-seg-nome-${idx}`}>
+                        {stat.segment}
+                      </td>
+                      <td className="py-4 px-4 text-right text-text-secondary font-medium" id={`cell-seg-partcount-${idx}`}>
+                        {stat.partnersCount}
+                      </td>
+                      <td className="py-4 px-4 text-right font-bold text-text-primary" id={`cell-seg-plancount-${idx}`}>
+                        {stat.plansCount}
+                      </td>
+                      <td className="py-4 px-4 text-right pr-4" id={`cell-seg-coverage-${idx}`}>
+                        {stat.coverage !== null ? (
+                          <div className="flex items-center justify-end gap-3">
+                            <span className={`text-sm font-bold ${
+                              stat.coverage < 50 ? 'text-rose-600 dark:text-rose-400' : stat.coverage < 80 ? 'text-amber-500' : 'text-emerald-600'
+                            }`}>
+                              {stat.coverage.toFixed(1)}%
+                            </span>
+                            <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden hidden sm:block">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  stat.coverage < 50 ? 'bg-rose-500' : stat.coverage < 80 ? 'bg-amber-400' : 'bg-emerald-500'
+                                }`} 
+                                style={{ width: `${Math.min(100, stat.coverage)}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-text-secondary text-sm font-medium">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {segmentStats.length === 0 && (
+                    <tr id="row-no-segmentos">
+                      <td colSpan={4} className="py-8 text-center text-text-secondary">
+                        Nenhum segmento com parceiros encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Section 3: Planos Criados WoW */}
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm h-full flex flex-col" id="section-planos-criados-wow">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold tracking-tight text-text-primary" id="section-planos-criados-wow-title">
+              Planos Criados WoW
+            </h2>
+            <p className="text-sm text-text-secondary mt-1">
+              Quantidade semanal de novos planos criados, com ranking de gerentes ativos por período.
+            </p>
+          </div>
+
+          {loadingData ? (
+            <div className="flex h-64 items-center justify-center" id="planos-criados-loading">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <span className="text-sm text-text-secondary">Carregando gráfico...</span>
+              </div>
+            </div>
+          ) : errorMsg ? (
+            <div className="flex h-64 items-center justify-center text-sm text-red-500" id="planos-criados-error">
+              {errorMsg}
+            </div>
+          ) : (
+            <div className="h-72 w-full mt-auto" id="planos-criados-chart-wrapper">
+              <Bar data={chartWeeklyData} options={chartWeeklyOptions} plugins={chartWeeklyPlugins} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Linha Divisória */}
+      <div className="border-t border-border border-opacity-40 my-10" id="divider-relatorios" />
+
+      {/* Seção: Relatórios Operacionais */}
+      <div className="flex flex-col gap-6 mb-6" id="section-relatorios-operacionais">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-text-primary" id="section-relatorios-title">
+            Relatórios Operacionais
+          </h2>
+          <p className="text-sm text-text-secondary mt-1" id="section-relatorios-desc">
+            Visualizações detalhadas sobre o andamento de tarefas, conclusões e status por gerente.
+          </p>
+        </div>
+
+        {/* Grid 2x2 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="relatorios-grid">
+          {/* Card 1 */}
+          <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col h-[400px]" id="card-relatorio-tasks-concluidas">
+            <div className="mb-4">
+              <h3 className="text-base font-bold tracking-tight text-text-primary" id="title-tasks-concluidas">
+                Tasks Concluídas por Gerente (últimas 8 semanas)
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Evolução semanal de tarefas finalizadas com sucesso por cada integrante da equipe.
+              </p>
+            </div>
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center flex-1" id="placeholder-tasks-concluidas">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+                <span className="text-xs text-text-secondary font-medium">Carregando dados...</span>
+              </div>
+            ) : errorMsg ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-xs text-red-500 font-medium">
+                Erro ao carregar dados
+              </div>
+            ) : (
+              <div className="h-64 w-full mt-auto" id="tasks-concluidas-chart-wrapper">
+                <Bar data={chartCompletedTasksData} options={chartCompletedTasksOptions} plugins={chartCompletedTasksPlugins} />
+              </div>
+            )}
+          </div>
+
+          {/* Card 2 */}
+          <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col h-[400px]" id="card-relatorio-tasks-atrasadas">
+            <div className="mb-4">
+              <h3 className="text-base font-bold tracking-tight text-text-primary" id="title-tasks-atrasadas">
+                Tasks Atrasadas por Gerente (últimas 8 semanas)
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Histórico de tarefas expiradas acumuladas por gerente ao longo do tempo.
+              </p>
+            </div>
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center flex-1" id="placeholder-tasks-atrasadas">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+                <span className="text-xs text-text-secondary font-medium">Carregando dados...</span>
+              </div>
+            ) : errorMsg ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-xs text-red-500 font-medium">
+                Erro ao carregar dados
+              </div>
+            ) : (
+              <div className="h-64 w-full mt-auto" id="tasks-atrasadas-chart-wrapper">
+                <Bar data={chartDelayedTasksData} options={chartDelayedTasksOptions} plugins={chartDelayedTasksPlugins} />
+              </div>
+            )}
+          </div>
+
+          {/* Card 3 */}
+          <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col h-[400px]" id="card-relatorio-planos-finalizados">
+            <div className="mb-4">
+              <h3 className="text-base font-bold tracking-tight text-text-primary" id="title-planos-finalizados">
+                Planos Finalizados por Gerente
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Total consolidado de planos de ação inteiramente finalizados e entregues.
+              </p>
+            </div>
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center flex-1" id="placeholder-planos-finalizados">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+                <span className="text-xs text-text-secondary font-medium">Carregando dados...</span>
+              </div>
+            ) : errorMsg ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-xs text-red-500 font-medium">
+                Erro ao carregar dados
+              </div>
+            ) : (
+              <div className="h-64 w-full mt-auto" id="planos-finalizados-chart-wrapper">
+                <Bar data={chartFinishedPlansData} options={chartFinishedPlansOptions} plugins={chartFinishedPlansPlugins} />
+              </div>
+            )}
+          </div>
+
+          {/* Card 4 */}
+          <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col h-[400px]" id="card-relatorio-tasks-status">
+            <div className="mb-4">
+              <h3 className="text-base font-bold tracking-tight text-text-primary" id="title-tasks-status">
+                Tasks por Status e Gerente
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Distribuição percentual e absoluta do status atual das tarefas por gestor.
+              </p>
+            </div>
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center flex-1" id="placeholder-tasks-status">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+                <span className="text-xs text-text-secondary font-medium">Carregando dados...</span>
+              </div>
+            ) : errorMsg ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-xs text-red-500 font-medium">
+                Erro ao carregar dados
+              </div>
+            ) : (
+              <div className="h-64 w-full mt-auto" id="tasks-status-chart-wrapper">
+                <Bar data={chartTasksStatusData} options={chartTasksStatusOptions} plugins={chartTasksStatusPlugins} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Linha Divisória */}
+      <div className="border-t border-border border-opacity-40 my-10" id="divider-evolucao-playbooks" />
+
+      {/* Seção: Evolução dos Playbooks */}
+      <div className="flex flex-col gap-6 mb-6" id="section-evolucao-playbooks">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-text-primary" id="title-evolucao-playbooks">
+            Evolução dos Playbooks
+          </h2>
+          <p className="text-sm text-text-secondary mt-1">
+            Evolução semanal das métricas do playbook para os filtros selecionados.
+          </p>
+        </div>
+
+        <div className="w-full" id="evolucao-playbooks-wrapper">
+          {/* Card: Histórico de Métricas e Cobertura de Licenças */}
+          <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col justify-between" id="card-evolucao-historico">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border border-opacity-30 pb-4">
+              <div>
+                <h3 className="text-base font-bold tracking-tight text-text-primary" id="title-historico-metricas">
+                  {evolucaoTab === 'historico' ? 'Histórico de Métricas' : 'Cobertura de Licenças'}
+                </h3>
+                <p className="text-xs text-text-secondary mt-1">
+                  {evolucaoTab === 'historico'
+                    ? 'Evolução semanal das métricas do playbook para os filtros selecionados.'
+                    : 'Acompanhamento semanal de licenças cobertas, desengajadas e taxa de engajamento dos parceiros com plano criado.'}
+                </p>
+              </div>
+
+              {/* Abas */}
+              <div className="flex items-center gap-1 bg-bg-secondary/20 p-1 rounded-lg border border-border shrink-0 self-start sm:self-auto" id="tabs-evolucao-playbooks">
+                <button
+                  type="button"
+                  onClick={() => setEvolucaoTab('historico')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    evolucaoTab === 'historico'
+                      ? 'bg-card text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                  id="btn-tab-historico-metricas"
+                >
+                  Histórico de Métricas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvolucaoTab('cobertura')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    evolucaoTab === 'cobertura'
+                      ? 'bg-card text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                  id="btn-tab-cobertura-licencas"
+                >
+                  Cobertura de Licenças
+                </button>
+              </div>
+            </div>
+
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center flex-1 py-12" id="placeholder-historico">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+                <span className="text-xs text-text-secondary font-medium">Carregando histórico...</span>
+              </div>
+            ) : errorMsg ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-xs text-red-500 font-medium py-12">
+                Erro ao carregar dados
+              </div>
+            ) : evolucaoTab === 'historico' ? (
+              (() => {
+                const hist = historicalData;
+                if (!hist || hist.status === 'empty') {
+                  return (
+                    <div className="flex flex-col items-center justify-center flex-1 text-center py-12 border border-dashed border-border rounded-lg p-6 bg-slate-50/30 dark:bg-slate-900/10" id="historico-vazio">
+                      <span className="text-xs text-text-secondary font-medium max-w-sm">
+                        O snapshot semanal é gerado automaticamente toda segunda-feira às 06:00. Nenhum registro disponível ainda para esta visão.
+                      </span>
+                    </div>
+                  );
+                }
+
+                const columns = hist.data;
+                const formatSemana = (semanaStr: string) => {
+                  if (!semanaStr) return '';
+                  const dateMatch = semanaStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                  if (dateMatch) {
+                    const [, , month, day] = dateMatch;
+                    return `${day}/${month}`;
+                  }
+                  return semanaStr;
+                };
+
+                const metricsDef = [
+                  { label: "Parceiros no segmento", key: "parceiros_no_segmento" },
+                  { label: "Parceiros com plano criado", key: "parceiros_com_plano_criado" },
+                  { label: "Parceiros com plano finalizado", key: "parceiros_finalizado" }
+                ];
+
+                return (
+                  <div className="overflow-auto scroll-minimal border border-border border-opacity-40 rounded-lg flex-1" id="historico-table-wrapper">
+                    <table className="w-full text-left text-xs border-collapse" id="historico-table">
+                      <thead>
+                        <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                          <th className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider pl-4 border-b border-border border-opacity-40 sticky top-0 bg-card z-10">
+                            Métrica
+                          </th>
+                          {columns.map((col: any, index: number) => (
+                            <th key={index} className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40 pr-4 sticky top-0 bg-card z-10">
+                              {formatSemana(col.semana)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border divide-opacity-30">
+                        {metricsDef.map((metric, metricIdx) => (
+                          <tr key={metricIdx} className="hover:bg-bg-secondary/40 odd:bg-card even:bg-bg-secondary/10 transition-colors">
+                            <td className="py-3 px-3 font-medium text-text-primary pl-4 max-w-[200px] truncate">
+                              {metric.label}
+                            </td>
+                            {columns.map((col: any, colIdx: number) => {
+                              const val = Number(col[metric.key]) || 0;
+                              let variationNode = null;
+
+                              if (colIdx > 0) {
+                                const prevCol = columns[colIdx - 1];
+                                const prevVal = Number(prevCol[metric.key]) || 0;
+                                const diff = val - prevVal;
+
+                                if (diff > 0) {
+                                  variationNode = (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                      +{diff} ▲
+                                    </span>
+                                  );
+                                } else if (diff < 0) {
+                                  variationNode = (
+                                    <span className="text-rose-600 dark:text-rose-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                      {diff} ▼
+                                    </span>
+                                  );
+                                } else {
+                                  variationNode = (
+                                    <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                      —
+                                    </span>
+                                  );
+                                }
+                              }
+
+                              return (
+                                <td key={colIdx} className="py-3 px-3 text-right text-text-primary pr-4 font-semibold">
+                                  <div className="inline-flex items-center justify-end">
+                                    <span>{val}</span>
+                                    {variationNode}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()
+            ) : (
+              (() => {
+                const cob = licenseCoverageData;
+                if (!cob || cob.status === 'empty') {
+                  return (
+                    <div className="flex flex-col items-center justify-center flex-1 text-center py-12 border border-dashed border-border rounded-lg p-6 bg-slate-50/30 dark:bg-slate-900/10" id="cobertura-vazia">
+                      <span className="text-xs text-text-secondary font-medium max-w-sm">
+                        Nenhum dado de cobertura de licenças disponível para os filtros selecionados.
+                      </span>
+                    </div>
+                  );
+                }
+
+                const columns = cob.data;
+                const formatSemana = (semanaStr: string) => {
+                  if (!semanaStr) return '';
+                  const dateMatch = semanaStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                  if (dateMatch) {
+                    const [, , month, day] = dateMatch;
+                    return `${day}/${month}`;
+                  }
+                  return semanaStr;
+                };
+
+                const metricsDef = [
+                  { label: "Licenças Cobertas — Com Plano", key: "licencas_cobertas_com", isPercent: false },
+                  { label: "Licenças Desengajadas — Com Plano", key: "licencas_desengajadas_com", isPercent: false },
+                  { label: "Taxa de Engajamento — Com Plano", key: "taxa_engajamento_com", isPercent: true },
+                  { label: "Licenças Cobertas — Sem Plano", key: "licencas_cobertas_sem", isPercent: false },
+                  { label: "Licenças Desengajadas — Sem Plano", key: "licencas_desengajadas_sem", isPercent: false },
+                  { label: "Taxa de Engajamento — Sem Plano", key: "taxa_engajamento_sem", isPercent: true }
+                ];
+
+                return (
+                  <div className="overflow-auto scroll-minimal border border-border border-opacity-40 rounded-lg flex-1" id="cobertura-table-wrapper">
+                    <table className="w-full text-left text-xs border-collapse" id="cobertura-table">
+                      <thead>
+                        <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                          <th className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider pl-4 border-b border-border border-opacity-40 sticky top-0 bg-card z-10">
+                            Métrica
+                          </th>
+                          {columns.map((col: any, index: number) => (
+                            <th key={index} className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40 pr-4 sticky top-0 bg-card z-10">
+                              {formatSemana(col.semana)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border divide-opacity-30">
+                        {metricsDef.map((metric, metricIdx) => (
+                          <tr
+                            key={metricIdx}
+                            className={`hover:bg-bg-secondary/40 transition-colors ${
+                              metricIdx === 3
+                                ? 'border-t-2 border-border/80 bg-bg-secondary/20'
+                                : 'odd:bg-card even:bg-bg-secondary/10'
+                            }`}
+                          >
+                            <td className="py-3 px-3 font-semibold text-text-primary pl-4 max-w-[260px] truncate">
+                              {metric.label}
+                            </td>
+                            {columns.map((col: any, colIdx: number) => {
+                              const rawVal = col[metric.key];
+                              const isNull = rawVal === null || rawVal === undefined;
+
+                              let valDisplay = "—";
+                              if (!isNull) {
+                                if (metric.isPercent) {
+                                  valDisplay = `${Number(rawVal).toFixed(1).replace('.', ',')}%`;
+                                } else {
+                                  valDisplay = `${Number(rawVal).toLocaleString('pt-BR')}`;
+                                }
+                              }
+
+                              let variationNode = null;
+
+                              if (colIdx > 0) {
+                                const prevCol = columns[colIdx - 1];
+                                const prevRawVal = prevCol[metric.key];
+                                const prevIsNull = prevRawVal === null || prevRawVal === undefined;
+
+                                if (!isNull && !prevIsNull) {
+                                  const diff = Number(rawVal) - Number(prevRawVal);
+
+                                  if (metric.isPercent) {
+                                    const diffFixed = Number(diff.toFixed(1));
+                                    if (diffFixed > 0) {
+                                      variationNode = (
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                          +{diffFixed.toString().replace('.', ',')}% ▲
+                                        </span>
+                                      );
+                                    } else if (diffFixed < 0) {
+                                      variationNode = (
+                                        <span className="text-rose-600 dark:text-rose-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                          {diffFixed.toString().replace('.', ',')}% ▼
+                                        </span>
+                                      );
+                                    } else {
+                                      variationNode = (
+                                        <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                          —
+                                        </span>
+                                      );
+                                    }
+                                  } else {
+                                    if (diff > 0) {
+                                      variationNode = (
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                          +{diff.toLocaleString('pt-BR')} ▲
+                                        </span>
+                                      );
+                                    } else if (diff < 0) {
+                                      variationNode = (
+                                        <span className="text-rose-600 dark:text-rose-400 font-bold text-[10px] ml-1.5 whitespace-nowrap">
+                                          {diff.toLocaleString('pt-BR')} ▼
+                                        </span>
+                                      );
+                                    } else {
+                                      variationNode = (
+                                        <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                          —
+                                        </span>
+                                      );
+                                    }
+                                  }
+                                } else {
+                                  variationNode = (
+                                    <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                      —
+                                    </span>
+                                  );
+                                }
+                              }
+
+                              return (
+                                <td key={colIdx} className="py-3 px-3 text-right text-text-primary pr-4 font-semibold">
+                                  <div className="inline-flex items-center justify-end">
+                                    <span>{valDisplay}</span>
+                                    {variationNode}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()
+            )}
+          </div>
+        </div>
+
+        {/* Novo Card: Cobertura de Licenças — Total vs Com/Sem Plano */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm" id="card-cobertura-total-vs-plano">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6" id="header-cobertura-total-vs-plano">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-cobertura-total-vs-plano">
+                Cobertura de Licenças — Total vs Com/Sem Plano
+              </h3>
+              <p className="text-xs text-text-secondary mt-1" id="desc-cobertura-total-vs-plano">
+                Visão consolidada do total e do desmembramento por parceiros Com Plano vs Sem Plano.
+              </p>
+            </div>
+          </div>
+
+          {!licenseCoverageData || licenseCoverageData.status === 'loading' ? (
+            <div className="py-12 text-center text-text-secondary" id="cobertura-total-vs-plano-loading">
+              Carregando cobertura de licenças...
+            </div>
+          ) : licenseCoverageData.status === 'empty' || !licenseCoverageData.data || licenseCoverageData.data.length === 0 ? (
+            <div className="py-12 text-center text-text-secondary" id="cobertura-total-vs-plano-empty">
+              Nenhum dado encontrado para o período/filtros selecionados.
+            </div>
+          ) : (
+            (() => {
+              const columns = licenseCoverageData.data;
+              const formatSemana = (semanaStr: string) => {
+                if (!semanaStr) return '';
+                const dateMatch = semanaStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (dateMatch) {
+                  const [, , month, day] = dateMatch;
+                  return `${day}/${month}`;
+                }
+                return semanaStr;
+              };
+
+              const metricGroups = [
+                {
+                  groupTitle: "Licenças Cobertas",
+                  isInverted: false,
+                  rows: [
+                    { label: "Licenças Cobertas", key: "licencas_cobertas_total", isPercent: false, isTotal: true },
+                    { label: "Com Plano", key: "licencas_cobertas_com", isPercent: false, isTotal: false },
+                    { label: "Sem Plano", key: "licencas_cobertas_sem", isPercent: false, isTotal: false },
+                  ]
+                },
+                {
+                  groupTitle: "Licenças Desengajadas",
+                  isInverted: true, // Inverted variation color (subiu = vermelho, desceu = verde)
+                  rows: [
+                    { label: "Licenças Desengajadas", key: "licencas_desengajadas_total", isPercent: false, isTotal: true },
+                    { label: "Com Plano", key: "licencas_desengajadas_com", isPercent: false, isTotal: false },
+                    { label: "Sem Plano", key: "licencas_desengajadas_sem", isPercent: false, isTotal: false },
+                  ]
+                },
+                {
+                  groupTitle: "Taxa de Engajamento",
+                  isInverted: false,
+                  rows: [
+                    { label: "Taxa de Engajamento", key: "taxa_engajamento_total", isPercent: true, isTotal: true },
+                    { label: "Com Plano", key: "taxa_engajamento_com", isPercent: true, isTotal: false },
+                    { label: "Sem Plano", key: "taxa_engajamento_sem", isPercent: true, isTotal: false },
+                  ]
+                }
+              ];
+
+              return (
+                <div className="overflow-x-auto" id="table-cobertura-total-vs-plano-wrapper">
+                  <table className="w-full text-xs text-left" id="table-cobertura-total-vs-plano">
+                    <thead>
+                      <tr className="border-b border-border border-opacity-40 bg-bg-secondary/20">
+                        <th className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider pl-4 min-w-[200px]">
+                          Métrica / Grupo
+                        </th>
+                        {columns.map((col: any, index: number) => (
+                          <th key={index} className="py-2.5 px-3 font-bold text-text-secondary uppercase tracking-wider text-right pr-4 min-w-[120px]">
+                            {formatSemana(col.semana)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border divide-opacity-30">
+                      {metricGroups.map((group, groupIdx) => (
+                        <React.Fragment key={groupIdx}>
+                          {group.rows.map((row, rowIdx) => (
+                            <tr
+                              key={rowIdx}
+                              className={`transition-colors ${
+                                row.isTotal
+                                  ? `bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100/60 dark:hover:bg-indigo-900/40 ${groupIdx > 0 ? 'border-t-2 border-border/60' : ''}`
+                                  : 'hover:bg-bg-secondary/30 odd:bg-card even:bg-bg-secondary/10'
+                              }`}
+                            >
+                              <td className={`py-2.5 px-3 truncate ${
+                                row.isTotal
+                                  ? 'font-bold text-sm text-indigo-950 dark:text-indigo-200 pl-4'
+                                  : 'font-medium text-xs text-text-secondary pl-8'
+                              }`}>
+                                {row.label}
+                              </td>
+                              {columns.map((col: any, colIdx: number) => {
+                                const rawVal = col[row.key];
+                                const isNull = rawVal === null || rawVal === undefined;
+
+                                let valDisplay = "—";
+                                if (!isNull) {
+                                  if (row.isPercent) {
+                                    valDisplay = `${Number(rawVal).toFixed(1).replace('.', ',')}%`;
+                                  } else {
+                                    valDisplay = `${Number(rawVal).toLocaleString('pt-BR')}`;
+                                  }
+                                }
+
+                                let variationNode = null;
+
+                                if (colIdx > 0) {
+                                  const prevCol = columns[colIdx - 1];
+                                  const prevRawVal = prevCol[row.key];
+                                  const prevIsNull = prevRawVal === null || prevRawVal === undefined;
+
+                                  if (!isNull && !prevIsNull) {
+                                    const diff = Number(rawVal) - Number(prevRawVal);
+
+                                    const isPositive = diff > 0;
+                                    const isNegative = diff < 0;
+
+                                    let colorClass = "text-slate-400 dark:text-slate-500";
+                                    if (isPositive) {
+                                      colorClass = group.isInverted
+                                        ? "text-rose-600 dark:text-rose-400"
+                                        : "text-emerald-600 dark:text-emerald-400";
+                                    } else if (isNegative) {
+                                      colorClass = group.isInverted
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-rose-600 dark:text-rose-400";
+                                    }
+
+                                    if (row.isPercent) {
+                                      const diffFixed = Number(diff.toFixed(1));
+                                      if (diffFixed > 0) {
+                                        variationNode = (
+                                          <span className={`${colorClass} font-bold text-[10px] ml-1.5 whitespace-nowrap`}>
+                                            +{diffFixed.toString().replace('.', ',')}% ▲
+                                          </span>
+                                        );
+                                      } else if (diffFixed < 0) {
+                                        variationNode = (
+                                          <span className={`${colorClass} font-bold text-[10px] ml-1.5 whitespace-nowrap`}>
+                                            {diffFixed.toString().replace('.', ',')}% ▼
+                                          </span>
+                                        );
+                                      } else {
+                                        variationNode = (
+                                          <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                            —
+                                          </span>
+                                        );
+                                      }
+                                    } else {
+                                      if (diff > 0) {
+                                        variationNode = (
+                                          <span className={`${colorClass} font-bold text-[10px] ml-1.5 whitespace-nowrap`}>
+                                            +{diff.toLocaleString('pt-BR')} ▲
+                                          </span>
+                                        );
+                                      } else if (diff < 0) {
+                                        variationNode = (
+                                          <span className={`${colorClass} font-bold text-[10px] ml-1.5 whitespace-nowrap`}>
+                                            {diff.toLocaleString('pt-BR')} ▼
+                                          </span>
+                                        );
+                                      } else {
+                                        variationNode = (
+                                          <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                            —
+                                          </span>
+                                        );
+                                      }
+                                    }
+                                  } else {
+                                    variationNode = (
+                                      <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px] ml-1.5 whitespace-nowrap">
+                                        —
+                                      </span>
+                                    );
+                                  }
+                                }
+
+                                return (
+                                  <td
+                                    key={colIdx}
+                                    className={`py-2.5 px-3 text-right pr-4 ${
+                                      row.isTotal
+                                        ? 'font-bold text-sm text-text-primary'
+                                        : 'font-medium text-xs text-text-secondary'
+                                    }`}
+                                  >
+                                    <div className="inline-flex items-center justify-end">
+                                      <span>{valDisplay}</span>
+                                      {variationNode}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
+
+      {/* Linha Divisória */}
+      <div className="border-t border-border border-opacity-40 my-10" id="divider-avanco-diario" />
+
+      {/* Seção: Avanço Diário por Etapa */}
+      <div className="flex flex-col gap-6 mb-6" id="section-avanco-diario">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" id="header-avanco-diario">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-text-primary" id="title-avanco-diario">
+              Avanço Diário por Etapa
+            </h2>
+            <p className="text-sm text-text-secondary mt-1" id="desc-avanco-diario">
+              Acompanhe a evolução acumulada dia a dia das conclusões de tarefas por etapa do playbook.
+            </p>
+          </div>
+
+          {/* Dropdown de Seletor de Playbook */}
+          <div className="w-full sm:w-72" id="seletor-playbook-wrapper">
+            <select
+              value={selectedPlaybookId}
+              onChange={(e) => setSelectedPlaybookId(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-card border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer shadow-sm"
+              id="seletor-playbook"
+            >
+              <option value="">Selecione um playbook...</option>
+              {playbooksList.map((pb) => (
+                <option key={pb.id} value={pb.id}>
+                  {pb.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Card do Gráfico / Estados Vazios */}
+        <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col min-h-[420px]" id="card-avanco-diario-chart">
+          {!selectedPlaybookId ? (
+            <div className="flex flex-col items-center justify-center flex-1 py-16 text-center border border-dashed border-border rounded-lg bg-slate-50/30 dark:bg-slate-900/10" id="avanco-diario-vazio-seletor">
+              <span className="text-xs text-text-secondary font-medium max-w-sm">
+                Selecione um playbook para ver o avanço diário
+              </span>
+            </div>
+          ) : loadingStepData ? (
+            <div className="flex flex-col items-center justify-center flex-1 py-16" id="avanco-diario-loading">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400 mb-2" />
+              <span className="text-xs text-text-secondary font-medium">Carregando avanço do playbook...</span>
+            </div>
+          ) : stepChartData.status === 'empty' ? (
+            <div className="flex flex-col items-center justify-center flex-1 py-16 text-center border border-dashed border-border rounded-lg bg-slate-50/30 dark:bg-slate-900/10 p-6" id="avanco-diario-vazio-dados">
+              <span className="text-xs text-text-secondary font-medium max-w-md leading-relaxed">
+                Ainda não há dados de avanço registrados para este playbook. O rastreamento começou em {new Date().toLocaleDateString('pt-BR')} — os números vão aparecer conforme as tasks forem concluídas.
+              </span>
+            </div>
+          ) : stepChartData.chartData ? (
+            <div className="h-[360px] w-full" id="avanco-diario-chart-wrapper">
+              <Bar data={stepChartData.chartData} options={stackedBarChartOptions} />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+

@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Playbook · Canal de Parceiros ContaAzul</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ca-blue:#0066FF;--ca-blue-dark:#0047CC;--ca-blue-light:#EBF2FF;
+  --ca-green:#00C853;--ca-green-light:#E8FAF0;
+  --bg:#fff;--surface:#F7F9FC;--surface2:#EEF2F8;
+  --border:#E2E8F4;--border2:#CBD5E8;
+  --text:#0D1B2A;--text2:#4A5568;--text3:#8FA3BF;
+  --red:#E53E3E;--red-bg:#FFF5F5;--red-bd:#FED7D7;
+  --amber:#D97706;--amber-bg:#FFFBEB;--amber-bd:#FDE68A;
+  --green:#059669;--green-bg:#ECFDF5;--green-bd:#A7F3D0;
+  --purple:#7C3AED;--purple-bg:#F5F3FF;--purple-bd:#DDD6FE;
+}
+html{font-size:14px;scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:#fff;color:var(--text);line-height:1.6}
+.nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center;padding:0 40px}
+.nav-logo{display:flex;align-items:center;gap:10px;margin-right:48px}
+.nav-mark{width:28px;height:28px;background:var(--ca-blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff}
+.nav-text{font-weight:600;font-size:13px}
+.nav-tabs{display:flex;margin-right:auto}
+.ntab{font-size:12px;font-weight:500;color:var(--text3);padding:0 16px;height:56px;display:flex;align-items:center;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+.ntab:hover{color:var(--text2)}
+.ntab.active{color:var(--ca-blue);border-bottom-color:var(--ca-blue)}
+.main{padding-top:56px}
+.sec{display:none;padding:48px 40px;max-width:1000px;margin:0 auto}
+.sec.active{display:block}
+.pg-tag{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ca-blue);margin-bottom:8px}
+.pg-title{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
+.pg-sub{font-size:14px;color:var(--text2);max-width:560px;line-height:1.7;margin-bottom:40px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:8px}
+.card p{font-size:13px;color:var(--text2);line-height:1.7}
+.card p strong{color:var(--text);font-weight:600}
+.ctag{display:inline-flex;align-items:center;background:var(--ca-blue-light);color:var(--ca-blue);font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;margin:2px}
+.divider{height:1px;background:var(--border);margin:28px 0}
+/* profile cards */
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
+.pc{border-radius:12px;padding:20px;border:1px solid var(--border)}
+.pc.auto{background:var(--amber-bg);border-color:var(--amber-bd)}
+.pc.cont{background:var(--ca-blue-light);border-color:#BFD7FF}
+.pc-tag{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.pc.auto .pc-tag{color:var(--amber)}.pc.cont .pc-tag{color:var(--ca-blue)}
+.pc h4{font-size:14px;font-weight:600;margin-bottom:6px}
+.pc p{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px}
+.pvals{display:flex;flex-wrap:wrap;gap:5px}
+.pval{font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;background:#fff;border:1px solid var(--border);color:var(--text2)}
+/* read table */
+.rtable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:32px}
+.rtable th{padding:10px 12px;text-align:left;background:var(--text);color:#fff;font-weight:500;font-size:11px}
+.rtable th:first-child{border-radius:8px 0 0 0}.rtable th:last-child{border-radius:0 8px 0 0}
+.rtable td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text2)}
+.rtable tr:last-child td{border-bottom:none}
+.rtable td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+.rtable tr:nth-child(even) td{background:var(--surface)}
+/* matrix */
+.mwrap{margin-bottom:32px}
+.mtitle{font-size:13px;font-weight:600;margin-bottom:8px}
+.msub{font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6}
+.mgrid{display:grid;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.mh{background:var(--text);color:#fff;padding:10px 12px;font-size:11px;font-weight:500;text-align:center;border-right:1px solid #2D3748;border-bottom:1px solid #2D3748}
+.mh:last-child{border-right:none}
+.mrl{background:var(--surface);padding:10px 8px;font-size:11px;font-weight:500;color:var(--text2);display:flex;align-items:center;justify-content:center;text-align:center;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.mq{padding:14px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.mq:last-child{border-right:none}
+.mq-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.mq p{font-size:11px;color:var(--text2);line-height:1.5}
+.mq .ex{margin-top:6px;font-size:10px;color:var(--text3);font-style:italic}
+.q-crit{background:var(--red-bg);border-left:3px solid var(--red)}.q-crit .mq-lbl{color:var(--red)}
+.q-risk{background:var(--amber-bg);border-left:3px solid var(--amber)}.q-risk .mq-lbl{color:var(--amber)}
+.q-ok{background:var(--green-bg);border-left:3px solid var(--green)}.q-ok .mq-lbl{color:var(--green)}
+.q-best{background:var(--ca-blue-light);border-left:3px solid var(--ca-blue)}.q-best .mq-lbl{color:var(--ca-blue)}
+.q-muted{background:var(--surface2)}.q-muted .mq-lbl{color:var(--text3)}
+/* ratio pills */
+.rpills{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:32px}
+.rpill{border-radius:10px;padding:16px;border:1px solid var(--border)}
+.rpill-r{background:var(--red-bg);border-color:var(--red-bd)}
+.rpill-a{background:var(--amber-bg);border-color:var(--amber-bd)}
+.rpill-g{background:var(--green-bg);border-color:var(--green-bd)}
+.rpill-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.rpill-r .rpill-lbl{color:var(--red)}.rpill-a .rpill-lbl{color:var(--amber)}.rpill-g .rpill-lbl{color:var(--green)}
+.rpill-val{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.rpill p{font-size:12px;color:var(--text2)}
+/* cluster layout */
+.clayout{display:grid;grid-template-columns:272px 1fr;gap:24px}
+.cside{position:sticky;top:72px;height:calc(100vh - 100px);overflow-y:auto}
+.cside::-webkit-scrollbar{width:3px}.cside::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.cglbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);padding:10px 10px 4px}
+.ci{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-radius:8px;margin:1px 4px;transition:all .15s}
+.ci:hover{background:var(--surface)}
+.ci.active{background:var(--ca-blue-light)}
+.ccode{font-size:10px;font-weight:600;min-width:28px;padding:2px 5px;border-radius:4px;text-align:center;flex-shrink:0}
+.cr1{background:var(--red-bg);color:var(--red)}
+.cr2{background:var(--amber-bg);color:var(--amber)}
+.crx{background:var(--surface2);color:var(--text2)}
+.cro{background:var(--purple-bg);color:var(--purple)}
+.ce{background:var(--green-bg);color:var(--green)}
+.ci-name{font-size:11px;font-weight:500;color:var(--text2);line-height:1.3}
+.ci.active .ci-name{color:var(--ca-blue)}
+.ci-rank{font-size:10px;color:var(--text3);margin-left:auto;flex-shrink:0}
+/* detail */
+.darea{min-height:400px}
+.dempty{display:flex;align-items:center;justify-content:center;height:300px;color:var(--text3);font-size:13px}
+.dhdr{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:14px}
+.dtop{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.dcode{font-size:13px;font-weight:700;padding:4px 11px;border-radius:6px}
+.dfila{font-size:11px;font-weight:500;color:var(--text3);border:1px solid var(--border);padding:2px 9px;border-radius:4px}
+.drank{font-size:11px;color:var(--text3);margin-left:auto}
+.dname{font-size:17px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+.dcrit{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.cpill{font-size:11px;font-weight:500;padding:2px 9px;border-radius:20px;background:var(--surface2);border:1px solid var(--border2);color:var(--text2)}
+.dstats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.dstat{background:#fff;border:1px solid var(--border);border-radius:8px;padding:11px}
+.dstat-v{font-size:18px;font-weight:700;line-height:1;margin-bottom:2px}
+.dstat-l{font-size:10px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.dbody{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.dblk{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px}
+.dblk-t{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px}
+.dblk p{font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:4px}
+.dblk p:last-child{margin-bottom:0}
+.dblk strong{color:var(--text);font-weight:600}
+.alist{list-style:none}
+.aitem{display:flex;gap:8px;font-size:12px;color:var(--text2);padding:5px 0;line-height:1.5;border-bottom:1px solid var(--surface2)}
+.aitem:last-child{border-bottom:none}
+.anum{min-width:19px;height:19px;border-radius:50%;background:var(--ca-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0;margin-top:1px}
+.dporque{background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:10px;padding:14px;margin-bottom:12px}
+.dporque-t{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--amber);margin-bottom:6px}
+.dporque p{font-size:12px;color:var(--text2);line-height:1.7}
+/* cases */
+.ccase{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.cc-hdr{background:var(--surface);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.cc-id{font-size:10px;color:var(--text3);font-weight:500}
+.cc-name{font-size:12px;font-weight:600}
+.cc-metrics{display:grid;grid-template-columns:repeat(4,1fr)}
+.cc-m{padding:10px 12px;border-right:1px solid var(--border)}
+.cc-m:last-child{border-right:none}
+.cc-mv{font-size:15px;font-weight:600;line-height:1;margin-bottom:2px}
+.cc-ml{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.cc-ins{padding:9px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text2);line-height:1.5;background:var(--ca-blue-light)}
+.cc-ins strong{color:var(--ca-blue)}
+/* search */
+.sinput{width:100%;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:12px;color:var(--text);outline:none;margin-bottom:6px}
+.sinput:focus{border-color:var(--ca-blue)}
+.sinput::placeholder{color:var(--text3)}
+/* quiz */
+.qcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:26px;margin-bottom:14px}
+.qq{font-size:15px;font-weight:600;margin-bottom:14px}
+.qopts{display:flex;flex-direction:column;gap:7px}
+.qbtn{display:flex;align-items:center;gap:9px;padding:11px 14px;border:1px solid var(--border);border-radius:8px;background:#fff;cursor:pointer;font-family:'Poppins',sans-serif;font-size:13px;color:var(--text2);transition:all .15s;text-align:left}
+.qbtn:hover{border-color:var(--ca-blue);color:var(--ca-blue);background:var(--ca-blue-light)}
+.qres{background:var(--ca-blue-light);border:1px solid #BFD7FF;border-radius:10px;padding:18px;margin-top:14px}
+.qres-t{font-size:14px;font-weight:600;color:var(--ca-blue);margin-bottom:5px}
+.qres-b{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px}
+.qacts{display:flex;gap:8px}
+.btn-p{background:var(--ca-blue);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-family:'Poppins',sans-serif;font-size:12px;font-weight:500;cursor:pointer}
+.btn-s{background:#fff;color:var(--text2);border:1px solid var(--border);padding:7px 14px;border-radius:6px;font-family:'Poppins',sans-serif;font-size:12px;font-weight:500;cursor:pointer}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-logo">
+    <div class="nav-mark">CA</div>
+    <span class="nav-text">Parceiros · Playbook</span>
+  </div>
+  <div class="nav-tabs">
+    <div class="ntab active" onclick="showSec('ler',this)">Como Ler</div>
+    <div class="ntab" onclick="showSec('var',this)">Variáveis & Cruzamentos</div>
+    <div class="ntab" onclick="showSec('clu',this)">Clusters</div>
+    <div class="ntab" onclick="showSec('quiz',this)">Consulta Rápida</div>
+  </div>
+</nav>
+<div class="main">
+
+<!-- COMO LER -->
+<div id="sec-ler" class="sec active">
+  <div class="pg-tag">01 · Base</div>
+  <div class="pg-title">Como ler a DB segmentado micro</div>
+  <div class="pg-sub">Uma linha por parceiro. Cada coluna revela algo diferente. Entender o que cada campo significa é o primeiro passo para saber o que fazer.</div>
+
+  <div class="pgrid">
+    <div class="pc auto">
+      <div class="pc-tag">Coluna I · Autodeclaração</div>
+      <h4>Perfil Parceiro</h4>
+      <p>O que o parceiro declarou no cadastro. Reflete a intenção — não necessariamente o que ele faz na prática. Pode estar desatualizado.</p>
+      <div class="pvals">
+        <span class="pval">ACCOUNTANCY</span><span class="pval">FINANCIAL_BPO</span>
+        <span class="pval">ACCOUNTANCY_FINANCIAL_BPO</span><span class="pval">CONSULTANCY</span>
+      </div>
+    </div>
+    <div class="pc cont">
+      <div class="pc-tag">Coluna J · Análise de contratos CA Pro</div>
+      <h4>Perfil Servico</h4>
+      <p>Identificado com base nos contratos reais vendidos pelo parceiro dentro do CA Pro. É o que usamos para definir a oferta e a abordagem — reflete o comportamento real.</p>
+      <div class="pvals">
+        <span class="pval">Contábil</span><span class="pval">BPO</span><span class="pval">Híbrido</span>
+      </div>
+    </div>
+  </div>
+
+  <table class="rtable">
+    <thead><tr><th>Coluna</th><th>O que é</th><th>Como interpretar</th><th>Sinal de alerta</th></tr></thead>
+    <tbody>
+      <tr><td>Código Cluster</td><td>R1–R13, RO1–RO2, E1–E18</td><td>R = retenção · E = expansão · RO = orientador. O número indica a prioridade dentro da fila.</td><td>RO1 ou RO2 = orientador urgente</td></tr>
+      <tr><td>Rank</td><td>Posição do cluster na fila</td><td>R1 = maior urgência em retenção. E1 = maior potencial em expansão. Rankings independentes entre filas.</td><td>Rank alto + estoque alto = prioridade máxima</td></tr>
+      <tr><td>Estoque</td><td>Licenças compradas e não usadas</td><td>Lic − Lic Eng. Quanto maior, maior o risco de churn.</td><td>Acima de 5 = risco ativo · Acima de 20 = crítico</td></tr>
+      <tr><td>Engajamento %</td><td>% das licenças em uso ativo</td><td>Lic Eng ÷ Lic total. Abaixo de 75% é alerta. Abaixo de 50% é urgência.</td><td>Abaixo de 50% com estoque alto = emergência</td></tr>
+      <tr><td>Exportações</td><td>Arquivos exportados nos últimos 90 dias</td><td>Proxy de uso real de automação contábil. Zero = não usa automação. Muda completamente a abordagem.</td><td>Zero = apresentar automação antes de qualquer ação</td></tr>
+      <tr><td>CNPJs Livres</td><td>CNPJs − Licenças compradas</td><td>Positivo = tem clientes para implantar. Negativo = mais licenças que clientes.</td><td>Negativo = cluster orientador (RO)</td></tr>
+      <tr><td>Ratio</td><td>CNPJs livres ÷ Estoque</td><td>Mede se o parceiro tem clientes suficientes para absorver o estoque. Abaixo de 0,7 = insuficiente.</td><td>Abaixo de 0,7 = orientador mesmo com pen positiva</td></tr>
+      <tr><td>Penetração %</td><td>Lic Eng ÷ CNPJs totais</td><td>% da carteira que já usa CA Pro. Negativo = mais licenças que clientes (over estoque).</td><td>Valor negativo = comprou além da carteira</td></tr>
+      <tr><td>Contas Potencial</td><td>Tamanho da oportunidade</td><td>Retenção: negativo = licenças em risco. Expansão: positivo = clientes disponíveis.</td><td>Muito negativo em retenção = churn iminente</td></tr>
+      <tr><td>Score Cluster</td><td>Número que gerou o ranking</td><td>Retenção: (estoque/parceiro) × (1−eng). Expansão: CNPJs livres/parceiro. Quanto maior, mais prioritário.</td><td>—</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- VARIÁVEIS -->
+<div id="sec-var" class="sec">
+  <div class="pg-tag">02 · Cruzamentos</div>
+  <div class="pg-title">Variáveis & o que revelam juntas</div>
+  <div class="pg-sub">O valor real está em como as variáveis se cruzam. Nenhuma funciona sozinha.</div>
+
+  <div class="mwrap">
+    <div class="mtitle">Matriz de risco de churn — Estoque × Engajamento</div>
+    <div class="msub">Estoque mede o <strong>tamanho</strong> do problema. Engajamento mede a <strong>urgência</strong>. Cruzar os dois define onde agir primeiro.</div>
+    <div class="mgrid" style="grid-template-columns:90px 1fr 1fr">
+      <div class="mh" style="background:#fff"></div>
+      <div class="mh">Engajamento &lt; 75%</div>
+      <div class="mh">Engajamento ≥ 75%</div>
+      <div class="mrl" style="border-bottom:1px solid var(--border)">Estoque &gt; 5</div>
+      <div class="mq q-crit" style="border-bottom:1px solid var(--border);border-right:1px solid var(--border)">
+        <div class="mq-lbl">🔴 Crítico — Agir agora</div>
+        <p>Alto volume de licenças desengajadas. Maior risco de churn. Prioridade máxima.</p>
+        <div class="ex">Ex: LCPA Contabilidade — 101 lic, eng 29%</div>
+      </div>
+      <div class="mq q-risk" style="border-bottom:1px solid var(--border)">
+        <div class="mq-lbl">🟡 Alerta — Investigar</div>
+        <p>Estoque alto mas base ainda engajada. Tempo existe mas não muito.</p>
+        <div class="ex">Ex: STATUS CONTÁBIL — 28 lic, eng 85%, exporta</div>
+      </div>
+      <div class="mrl">Estoque 1–5</div>
+      <div class="mq q-risk" style="border-right:1px solid var(--border)">
+        <div class="mq-lbl">🟠 Moderado — Contactar</div>
+        <p>Estoque pequeno com engajamento em queda. Tende a piorar se não tratado.</p>
+        <div class="ex">Ex: 3 lic paradas, eng 60%</div>
+      </div>
+      <div class="mq q-ok">
+        <div class="mq-lbl">🟢 Estável — Resolver rápido</div>
+        <p>Estoque pequeno e base saudável. Provavelmente implantação recente.</p>
+        <div class="ex">Ex: 2 lic paradas, eng 88%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mwrap">
+    <div class="mtitle">Prioridade dentro do mesmo cluster — Engajamento como desempate</div>
+    <div class="msub">Dois parceiros no R1 têm o mesmo diagnóstico geral. O engajamento diferencia quem atender primeiro — maior engajamento = mais fácil de converter.</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;background:var(--text)">
+        <div style="color:#fff;padding:9px 12px;font-size:11px;font-weight:500">Parceiro</div>
+        <div style="color:#fff;padding:9px 12px;font-size:11px;font-weight:500;border-left:1px solid #2D3748">Situação</div>
+        <div style="color:#fff;padding:9px 12px;font-size:11px;font-weight:500;border-left:1px solid #2D3748">Prioridade</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--border)">
+        <div style="padding:11px 12px;font-size:12px;color:var(--text2)">Cluster R1 · <strong style="color:var(--text)">Eng 90%</strong></div>
+        <div style="padding:11px 12px;font-size:12px;color:var(--text2);border-left:1px solid var(--border)">Clientes ativos. Fácil de abordar. Alta chance de converter.</div>
+        <div style="padding:11px 12px;border-left:1px solid var(--border)"><span style="background:var(--green-bg);color:var(--green);font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px">Atender primeiro</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr">
+        <div style="padding:11px 12px;font-size:12px;color:var(--text2)">Cluster R1 · <strong style="color:var(--text)">Eng 52%</strong></div>
+        <div style="padding:11px 12px;font-size:12px;color:var(--text2);border-left:1px solid var(--border)">Clientes desengajados. Conversa mais difícil. Mais esforço necessário.</div>
+        <div style="padding:11px 12px;border-left:1px solid var(--border)"><span style="background:var(--amber-bg);color:var(--amber);font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px">Atender depois</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mwrap">
+    <div class="mtitle">Matriz de potencial de expansão — Exportação × Engajamento × CNPJs livres</div>
+    <div class="msub">Para expansão, três variáveis definem a prontidão. Exportação indica domínio do sistema. Engajamento confirma base ativa. CNPJs livres define o tamanho da oportunidade.</div>
+    <div class="mgrid" style="grid-template-columns:100px 1fr 1fr">
+      <div class="mh" style="background:#fff"></div>
+      <div class="mh">Exporta + Eng ≥ 75%</div>
+      <div class="mh">Não exporta ou Eng &lt; 75%</div>
+      <div class="mrl" style="border-bottom:1px solid var(--border)">CNPJs livres &gt; 50</div>
+      <div class="mq q-best" style="border-bottom:1px solid var(--border);border-right:1px solid var(--border)">
+        <div class="mq-lbl">🔵 Expansão imediata (E2)</div>
+        <p>Melhor cenário. Sabe usar, base ativa, muito espaço. Simular receita e pilotar agora.</p>
+        <div class="ex">Ex: Tactus Contabilidade — 1.526 CNPJs livres, eng 100%</div>
+      </div>
+      <div class="mq q-risk" style="border-bottom:1px solid var(--border)">
+        <div class="mq-lbl">🟡 Preparar (E3 ou E1)</div>
+        <p>Potencial enorme mas precisa de um passo antes — automação ou resolver engajamento.</p>
+        <div class="ex">Ex: DRE Assessoria — 2.041 CNPJs livres, sem exportação</div>
+      </div>
+      <div class="mrl">CNPJs livres 11–50</div>
+      <div class="mq q-ok" style="border-right:1px solid var(--border)">
+        <div class="mq-lbl">🟢 Expansão ativa (E6)</div>
+        <p>Potencial médio com condições ideais. Pilotar com os clientes disponíveis.</p>
+      </div>
+      <div class="mq q-muted">
+        <div class="mq-lbl">⚪ Monitorar (E7–E9)</div>
+        <p>Potencial existe mas obstáculos a resolver primeiro.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--ca-blue)">
+    <h3>BPO com potencial no range ≤700 — oportunidade específica</h3>
+    <p>Um parceiro BPO com <strong>baixa penetração geral</strong> mas com <strong>muitos CNPJs no range abaixo de R$700</strong> e <strong>alto engajamento</strong> é candidato ao novo Plano BPO. Os clientes de ticket baixo foram deixados para trás porque o parceiro priorizou os de maior ticket. Com o novo plano mais acessível, esses clientes passam a ter fit de produto.<br><br>
+    Cruzar: <span class="ctag">Pot 0-700</span> <span class="ctag">Pen 0-700</span> <span class="ctag">Engajamento %</span> — quando Pot 0-700 for alto e Pen 0-700 for baixo, há potencial escondido.<br><br>
+    <strong>Exemplo:</strong> Voxel Gestão Financeira — BPO, eng 100%, 205 CNPJs livres. Candidato direto ao Plano BPO.</p>
+  </div>
+
+  <div class="divider"></div>
+  <div class="mtitle">O Ratio — critério que mudou a priorização</div>
+  <div class="msub">CNPJs livres ÷ Estoque. Mede se o parceiro tem clientes suficientes para absorver as licenças paradas. Ratio abaixo de 0,7 = vai para orientador independente de engajamento ou exportação.</div>
+  <div class="rpills">
+    <div class="rpill rpill-r"><div class="rpill-lbl">Ratio &lt; 0</div><div class="rpill-val">Pen negativa</div><p>Mais licenças que clientes. Comprou além da carteira. → RO1</p></div>
+    <div class="rpill rpill-a"><div class="rpill-lbl">Ratio 0 a 0,7</div><div class="rpill-val">Clientes insuficientes</div><p>Tem alguns clientes mas não suficientes para o estoque. → RO2</p></div>
+    <div class="rpill rpill-g"><div class="rpill-lbl">Ratio ≥ 0,7</div><div class="rpill-val">Clientes suficientes</div><p>Tem clientes para absorver o estoque. Entra nos clusters R1–R13.</p></div>
+  </div>
+</div>
+
+<!-- CLUSTERS -->
+<div id="sec-clu" class="sec">
+  <div class="pg-tag">03 · Clusters</div>
+  <div class="pg-title">Os 35 clusters</div>
+  <div class="pg-sub">Clique em qualquer cluster para ver diagnóstico, por que foi segmentado assim, casos reais e sequência de ação.</div>
+  <div class="clayout">
+    <div class="cside">
+      <input class="sinput" type="text" placeholder="Buscar cluster..." oninput="filterC(this.value)">
+      <div class="cglbl">Retenção · Estoque alto (&gt;5)</div>
+      <div class="ci" onclick="showC('R1',this)"><span class="ccode cr1">R1</span><span class="ci-name">Est&gt;5 · Exporta · &lt;75% · Contábil</span><span class="ci-rank">#1</span></div>
+      <div class="ci" onclick="showC('R2',this)"><span class="ccode cr1">R2</span><span class="ci-name">Est&gt;5 · Não exporta · &lt;75% · Contábil</span><span class="ci-rank">#2</span></div>
+      <div class="ci" onclick="showC('R3',this)"><span class="ccode cr2">R3</span><span class="ci-name">Est&gt;5 · Não exporta · ≥75% · Contábil</span><span class="ci-rank">#3</span></div>
+      <div class="ci" onclick="showC('R4',this)"><span class="ccode cr2">R4</span><span class="ci-name">Est&gt;5 · Exporta · ≥75% · Contábil</span><span class="ci-rank">#4</span></div>
+      <div class="ci" onclick="showC('R9',this)"><span class="ccode crx">R9</span><span class="ci-name">Est&gt;5 · Não exporta · ≥75% · BPO</span><span class="ci-rank">#9</span></div>
+      <div class="cglbl">Retenção · Estoque pequeno (1–5)</div>
+      <div class="ci" onclick="showC('R5',this)"><span class="ccode crx">R5</span><span class="ci-name">Est1-5 · Não exporta · &lt;75% · BPO</span><span class="ci-rank">#5</span></div>
+      <div class="ci" onclick="showC('R6',this)"><span class="ccode crx">R6</span><span class="ci-name">Est1-5 · Exporta · &lt;75% · BPO</span><span class="ci-rank">#6</span></div>
+      <div class="ci" onclick="showC('R7',this)"><span class="ccode cr2">R7</span><span class="ci-name">Est1-5 · Exporta · &lt;75% · Contábil</span><span class="ci-rank">#7</span></div>
+      <div class="ci" onclick="showC('R8',this)"><span class="ccode cr2">R8</span><span class="ci-name">Est1-5 · Não exporta · &lt;75% · Contábil</span><span class="ci-rank">#8</span></div>
+      <div class="ci" onclick="showC('R10',this)"><span class="ccode crx">R10</span><span class="ci-name">Est1-5 · Exporta · ≥75% · Contábil</span><span class="ci-rank">#10</span></div>
+      <div class="ci" onclick="showC('R11',this)"><span class="ccode crx">R11</span><span class="ci-name">Est1-5 · Não exporta · ≥75% · Contábil</span><span class="ci-rank">#11</span></div>
+      <div class="ci" onclick="showC('R12',this)"><span class="ccode crx">R12</span><span class="ci-name">Est1-5 · Não exporta · ≥75% · BPO</span><span class="ci-rank">#12</span></div>
+      <div class="ci" onclick="showC('R13',this)"><span class="ccode crx">R13</span><span class="ci-name">Est1-5 · Exporta · ≥75% · BPO</span><span class="ci-rank">#13</span></div>
+      <div class="cglbl">Orientador</div>
+      <div class="ci" onclick="showC('RO1',this)"><span class="ccode cro">RO1</span><span class="ci-name">Pen negativa · Ratio &lt; 0</span><span class="ci-rank">336</span></div>
+      <div class="ci" onclick="showC('RO2',this)"><span class="ccode cro">RO2</span><span class="ci-name">Clientes insuficientes · Ratio 0–0,7</span><span class="ci-rank">58</span></div>
+      <div class="cglbl">Expansão · +50 CNPJs livres</div>
+      <div class="ci" onclick="showC('E1',this)"><span class="ccode ce">E1</span><span class="ci-name">Não exporta · &lt;75% · Contábil · +50</span><span class="ci-rank">#1</span></div>
+      <div class="ci" onclick="showC('E2',this)"><span class="ccode ce">E2</span><span class="ci-name">Exporta · ≥75% · Contábil · +50</span><span class="ci-rank">#2</span></div>
+      <div class="ci" onclick="showC('E3',this)"><span class="ccode ce">E3</span><span class="ci-name">Não exporta · ≥75% · Contábil · +50</span><span class="ci-rank">#3</span></div>
+      <div class="ci" onclick="showC('E4',this)"><span class="ccode ce">E4</span><span class="ci-name">Não exporta · ≥75% · BPO · +50</span><span class="ci-rank">#4</span></div>
+      <div class="ci" onclick="showC('E5',this)"><span class="ccode ce">E5</span><span class="ci-name">Exporta · &lt;75% · Contábil · +50</span><span class="ci-rank">#5</span></div>
+      <div class="cglbl">Expansão · 11–50 CNPJs livres</div>
+      <div class="ci" onclick="showC('E6',this)"><span class="ccode ce">E6</span><span class="ci-name">Exporta · ≥75% · Contábil · 11-50</span><span class="ci-rank">#6</span></div>
+      <div class="ci" onclick="showC('E7',this)"><span class="ccode ce">E7</span><span class="ci-name">Não exporta · ≥75% · Contábil · 11-50</span><span class="ci-rank">#7</span></div>
+      <div class="ci" onclick="showC('E8',this)"><span class="ccode ce">E8</span><span class="ci-name">Exporta · &lt;75% · Contábil · 11-50</span><span class="ci-rank">#8</span></div>
+      <div class="ci" onclick="showC('E9',this)"><span class="ccode ce">E9</span><span class="ci-name">Não exporta · &lt;75% · Contábil · 11-50</span><span class="ci-rank">#9</span></div>
+      <div class="ci" onclick="showC('E10',this)"><span class="ccode ce">E10</span><span class="ci-name">Exporta · ≥75% · BPO · 11-50</span><span class="ci-rank">#10</span></div>
+      <div class="ci" onclick="showC('E11',this)"><span class="ccode ce">E11</span><span class="ci-name">Não exporta · ≥75% · BPO · 11-50</span><span class="ci-rank">#11</span></div>
+      <div class="cglbl">Expansão · 0–10 CNPJs livres</div>
+      <div class="ci" onclick="showC('E12',this)"><span class="ccode ce">E12</span><span class="ci-name">Exporta · ≥75% · Contábil · 0-10</span><span class="ci-rank">#12</span></div>
+      <div class="ci" onclick="showC('E13',this)"><span class="ccode ce">E13</span><span class="ci-name">Exporta · &lt;75% · Contábil · 0-10</span><span class="ci-rank">#13</span></div>
+      <div class="ci" onclick="showC('E14',this)"><span class="ccode ce">E14</span><span class="ci-name">Não exporta · &lt;75% · Contábil · 0-10</span><span class="ci-rank">#14</span></div>
+      <div class="ci" onclick="showC('E15',this)"><span class="ccode ce">E15</span><span class="ci-name">Exporta · &lt;75% · BPO · 0-10</span><span class="ci-rank">#15</span></div>
+      <div class="ci" onclick="showC('E16',this)"><span class="ccode ce">E16</span><span class="ci-name">Exporta · ≥75% · BPO · 0-10</span><span class="ci-rank">#16</span></div>
+      <div class="ci" onclick="showC('E17',this)"><span class="ccode ce">E17</span><span class="ci-name">Não exporta · ≥75% · Contábil · 0-10</span><span class="ci-rank">#17</span></div>
+      <div class="ci" onclick="showC('E18',this)"><span class="ccode ce">E18</span><span class="ci-name">Não exporta · ≥75% · BPO · 0-10</span><span class="ci-rank">#18</span></div>
+    </div>
+    <div id="darea"><div class="dempty">← Selecione um cluster para ver o diagnóstico completo</div></div>
+  </div>
+</div>
+
+<!-- QUIZ -->
+<div id="sec-quiz" class="sec">
+  <div class="pg-tag">04 · Consulta</div>
+  <div class="pg-title">Qual é a situação do parceiro?</div>
+  <div class="pg-sub">Responda as perguntas para encontrar o cluster e a ação recomendada.</div>
+  <div id="qcontainer"></div>
+</div>
+
+</div>
+<script>
+function showSec(id,el){document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));document.getElementById('sec-'+id).classList.add('active');document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));if(el)el.classList.add('active')}
+
+const CD={
+  R1:{name:'Est>5 · Exporta · <75% · Contábil',fila:'RETENÇÃO',rank:'#1',p:166,em:'14,4',eg:'55%',cl:104,ratio:'≥ 0,7',crit:['Estoque > 5','Eng < 75%','Exporta','Contábil','Ratio ≥ 0,7'],porque:'É o cluster de maior volume de licenças em risco da base. Separamos por exportação porque o parceiro que exporta já usa automação — o problema não é de conhecimento mas de acompanhamento. Engajamento abaixo de 75% com exportação activa indica que o sistema está sendo usado para fechamento mas os clientes não foram completamente ativados. Tratar como R2 (sem exportação) levaria a ações ineficazes.',diag:'166 contadores com média de 14 licenças paradas que já usam automação contábil mas têm engajamento de 55%.',acoes:[
+'Diagnóstico de licenças não atribuídas',
+'Se sem utilidade: verificar migração para automação contábil',
+'Se com utilidade para a base: mapear clientes com perfil e criar evento online de apresentação para novos potenciais clientes',
+'Licenças desengajadas e atribuídas — diagnóstico do motivo de não uso com o parceiro',
+'Dar utilidade às licenças: registro de vendas, contas a pagar e receber, emissão de NF, IA Captura',
+'Treinar clientes para uso que beneficie a operação do parceiro'
+],casos:[{id:22970,nome:'LCPA Contabilidade & Finanças',est:101,eng:'29%',exp:41,livres:-3,ins:'101 lic paradas, eng 29%, ratio negativo. Crítico — comprou além da carteira.'},{id:37130,nome:'STATUS CONTÁBIL',est:28,eng:'85%',exp:294,livres:120,ins:'28 paradas, eng 85%, exporta muito. Fácil de resolver — base ótima com estoque alto.'}]},
+  R2:{name:'Est>5 · Não exporta · <75% · Contábil',fila:'RETENÇÃO',rank:'#2',p:85,em:'9,8',eg:'47%',cl:88,ratio:'≥ 0,7',crit:['Estoque > 5','Eng < 75%','Não exporta','Contábil','Ratio ≥ 0,7'],porque:'Separado do R1 porque a ausência de exportação muda completamente o primeiro passo. Sem automação, qualquer ação de atribuição tem resultado limitado — o parceiro não tem o fluxo de trabalho para implantar eficientemente.',diag:'85 contadores com estoque alto, engajamento 47% e sem automação. Caminho passa pela adoção de exportação primeiro.',acoes:['Apresentar exportação com um cliente real','Conectar ao parceiro orientador de automação','Trabalhar atribuição após o parceiro exportar'],casos:[{id:61562,nome:'Trinta Porcento Gestão',est:82,eng:'34%',exp:0,livres:48,ins:'82 lic paradas, eng 34%, zero exportações. Urgente — escala enorme sem caminho sem automação.'},{id:63783,nome:'Essencial Contábil Ltda',est:8,eng:'47%',exp:0,livres:387,ins:'8 paradas mas 387 CNPJs livres. Quando adotar automação, potencial de expansão enorme.'}]},
+  R3:{name:'Est>5 · Não exporta · ≥75% · Contábil',fila:'RETENÇÃO',rank:'#3',p:6,em:'9,2',eg:'76%',cl:142,ratio:'≥ 0,7',crit:['Estoque > 5','Eng ≥ 75%','Não exporta','Contábil','Ratio ≥ 0,7'],porque:'Paradoxo: engajamento saudável mas sem exportação. Clientes usam o sistema de forma independente sem passar pelo fluxo do contador. Apresentar exportação destrava retenção e expansão.',diag:'6 contadores com engajamento bom mas sem automação. Com 142 CNPJs livres médios, vão para E2 quando exportarem.',acoes:['Apresentar exportação','Entender por que com eng alto o parceiro não exporta','Quando exportar, reavaliar para R4 e depois E2'],casos:[]},
+  R4:{name:'Est>5 · Exporta · ≥75% · Contábil',fila:'RETENÇÃO',rank:'#4',p:47,em:'10,5',eg:'82%',cl:172,ratio:'≥ 0,7',crit:['Estoque > 5','Eng ≥ 75%','Exporta','Contábil','Ratio ≥ 0,7'],porque:'Melhor situação dentro do estoque alto. Parceiro sabe usar, base ativa. O estoque alto com engajamento bom é quase sempre licenças não atribuídas de clientes novos. Resolver é direto.',diag:'47 contadores com engajamento 82% e 172 CNPJs livres médios. Ação direta sem mudança de comportamento.',acoes:['Identificar clientes sem CA Pro e atribuir as licenças paradas','Para sem ticket cheio: automação','Com 172 CNPJs livres: resolver estoque abre expansão imediata'],casos:[{id:31970,nome:'RTCOUNT Contabilidade Digital',est:28,eng:'78%',exp:141,livres:229,ins:'28 paradas, eng 78%, 229 CNPJs livres. Após resolver: E2 imediato.'},{id:44588,nome:'Move Negócios',est:25,eng:'78%',exp:61,livres:253,ins:'25 paradas, 253 CNPJs livres. Resolver usa 10% do potencial.'}]},
+  R5:{name:'Est1-5 · Não exporta · <75% · BPO',fila:'RETENÇÃO',rank:'#5',p:1,em:'5',eg:'64%',cl:14,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng < 75%','Não exporta','BPO','Ratio ≥ 0,7'],porque:'BPO com estoque pequeno sem exportação. Separado do Contábil porque não tem opção de migrar para licenças de automação contábil.',diag:'1 parceiro BPO. Atribuição com ações na base.',acoes:['Atribuir licenças com ações na base','Webinar ou evento presencial'],casos:[]},
+  R6:{name:'Est1-5 · Exporta · <75% · BPO',fila:'RETENÇÃO',rank:'#6',p:1,em:'4',eg:'56%',cl:48,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng < 75%','Exporta','BPO','Ratio ≥ 0,7'],porque:'BPO com estoque pequeno que exporta e eng em queda.',diag:'1 parceiro BPO. 48 CNPJs livres. Atribuição rápida.',acoes:['Atribuir as licenças paradas','Ações na base para recuperar engajamento'],casos:[]},
+  R7:{name:'Est1-5 · Exporta · <75% · Contábil',fila:'RETENÇÃO',rank:'#7',p:126,em:'3,6',eg:'63%',cl:77,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng < 75%','Exporta','Contábil','Ratio ≥ 0,7'],porque:'Maior grupo de estoque pequeno em urgência. Volume relevante com tendência de piora — 126 parceiros com engajamento caindo que exportam.',diag:'126 contadores com 3,6 lic paradas médias e 77 CNPJs livres. Resolver antes que o estoque cresça.',acoes:['Contato rápido para entender as licenças paradas','Atribuição imediata','Para sem ticket cheio: automação R$39,90'],casos:[]},
+  R8:{name:'Est1-5 · Não exporta · <75% · Contábil',fila:'RETENÇÃO',rank:'#8',p:162,em:'3,3',eg:'60%',cl:89,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng < 75%','Não exporta','Contábil','Ratio ≥ 0,7'],porque:'Mesmo raciocínio do R7 mas sem exportação. Apresentar automação antes de qualquer atribuição.',diag:'162 contadores com 89 CNPJs livres médios. Muito espaço após resolver.',acoes:['Apresentar exportação primeiro','Atribuir após adotar automação'],casos:[]},
+  R9:{name:'Est>5 · Não exporta · ≥75% · BPO',fila:'RETENÇÃO',rank:'#9',p:1,em:'7',eg:'82%',cl:225,ratio:'≥ 0,7',crit:['Estoque > 5','Eng ≥ 75%','Não exporta','BPO','Ratio ≥ 0,7'],porque:'BPO com engajamento alto, estoque alto e 225 CNPJs livres. Volume justifica cluster próprio.',diag:'1 parceiro BPO. 7 lic paradas, eng 82%, 225 CNPJs livres.',acoes:['Atribuir as 7 licenças na carteira','Com 225 livres: expansão BPO imediata após resolver'],casos:[]},
+  R10:{name:'Est1-5 · Exporta · ≥75% · Contábil',fila:'RETENÇÃO',rank:'#10',p:264,em:'2,1',eg:'85%',cl:104,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng ≥ 75%','Exporta','Contábil','Ratio ≥ 0,7'],porque:'Maior grupo de estoque pequeno em volume. Base saudável com estoque de implantações recentes.',diag:'264 contadores com ~2 lic paradas médias, eng 85%, 104 CNPJs livres.',acoes:['Contato rápido para atribuir as licenças paradas','Com 104 CNPJs livres: apresentar expansão logo após resolver'],casos:[]},
+  R11:{name:'Est1-5 · Não exporta · ≥75% · Contábil',fila:'RETENÇÃO',rank:'#11',p:202,em:'1,5',eg:'84%',cl:97,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng ≥ 75%','Não exporta','Contábil','Ratio ≥ 0,7'],porque:'Engajamento alto mas sem exportação. Apresentar exportação aqui é baixo esforço com alto retorno.',diag:'202 contadores. Eng 84%, 97 CNPJs livres médios.',acoes:['Apresentar exportação','Resolver estoque','Com 97 livres: expansão logo após'],casos:[]},
+  R12:{name:'Est1-5 · Não exporta · ≥75% · BPO',fila:'RETENÇÃO',rank:'#12',p:5,em:'1,6',eg:'86%',cl:17,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng ≥ 75%','Não exporta','BPO','Ratio ≥ 0,7'],porque:'BPO estável com estoque pequeno. Baixa urgência.',diag:'5 parceiros BPO, eng 86%, estoque ~2.',acoes:['Atribuir as licenças paradas'],casos:[]},
+  R13:{name:'Est1-5 · Exporta · ≥75% · BPO',fila:'RETENÇÃO',rank:'#13',p:6,em:'1,2',eg:'82%',cl:4,ratio:'≥ 0,7',crit:['Estoque 1–5','Eng ≥ 75%','Exporta','BPO','Ratio ≥ 0,7'],porque:'BPO em melhor situação possível de estoque pequeno.',diag:'6 parceiros. ~1 lic parada médio.',acoes:['Atribuir a licença parada','Avaliar expansão BPO após resolver'],casos:[]},
+  RO1:{name:'Orientador — Penetração Negativa',fila:'RETENÇÃO',rank:'Última prioridade',p:336,em:'8,0',eg:'66%',cl:-12,ratio:'< 0',crit:['Ratio < 0','Pen negativa','Mais licenças que CNPJs'],porque:'Separado de todos porque o problema é estruturalmente diferente. Não é questão de engajamento ou produto — o parceiro comprou mais licenças do que tem clientes. Qualquer ação de ativação vai falhar. Ratio negativo é o critério definitivo. O único caminho é aprender a captar clientes.',diag:'336 parceiros com pen média -12. Último em prioridade mas 2.001 licenças em risco no total.',acoes:['Diagnosticar por que compraram além da carteira','Escolher orientador com expertise em prospecção','Compartilhar link da agenda do orientador','Acompanhar evolução de clientes mensalmente'],casos:[{id:29023,nome:'ATENAS CONTABILIDADE',est:7,eng:'30%',exp:10,livres:-9,ins:'7 licenças para 1 cliente. Ratio -9. Orientador urgente.'},{id:2237,nome:'Macris Assessoria Contabil',est:72,eng:'33%',exp:0,livres:-105,ins:'72 licenças para 2 clientes. Ratio -105. Caso extremo.'}]},
+  RO2:{name:'Orientador — Clientes Insuficientes',fila:'RETENÇÃO',rank:'Última prioridade',p:58,em:'10,2',eg:'62%',cl:4,ratio:'0 a 0,7',crit:['Ratio 0 a 0,7','CNPJs livres positivos mas insuficientes'],porque:'Criado para capturar casos onde CNPJs livres é positivo mas insuficiente para absorver o estoque. O antigo critério pen < -3 não capturava esses casos. Ratio entre 0 e 0,7 significa que mesmo usando todos os clientes disponíveis, sobra estoque. A matemática não fecha sem captar novos clientes.',diag:'58 parceiros com ratio médio de 0,4. Têm alguns clientes mas não o suficiente.',acoes:['Diagnosticar a proporção licenças vs clientes disponíveis','Orientador para capacitação em captação','Monitorar ratio mensalmente'],casos:[{id:79105,nome:'FABIOLA CALDAS MELO CARDIM',est:10,eng:'—',exp:0,livres:4,ins:'10 licenças, 4 CNPJs livres. Ratio 0,4. Não tem clientes para absorver o estoque mesmo usando tudo.'}]},
+  E1:{name:'Não exporta · <75% · Contábil · +50',fila:'EXPANSÃO',rank:'#1',p:11,em:'—',eg:'—',cl:171,ratio:'—',crit:['Sem estoque','Eng < 75%','Não exporta','Contábil','CNPJs livres > 50'],porque:'Menor grupo em volume mas maior potencial médio por parceiro: 171 CNPJs livres. É o #1 pelo score (CNPJs livres ÷ parceiros). Engajamento abaixo de 75% e sem exportação tornam o caminho mais longo mas o potencial justifica o investimento.',diag:'11 contadores com 171 CNPJs livres em média. Potencial total de 1.876 clientes.',acoes:['Entender por que engajamento está abaixo de 75%','Apresentar exportação como ganho de produtividade','Quando exportar e engajamento subir: expandir'],casos:[]},
+  E2:{name:'Exporta · ≥75% · Contábil · +50',fila:'EXPANSÃO',rank:'#2',p:230,em:'—',eg:'100%',cl:170,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Exporta','Contábil','CNPJs livres > 50'],porque:'Condições ideais para expansão imediata. Separado do E3 (não exporta) porque o passo de introduzir automação não é necessário — vai direto ao piloto.',diag:'230 contadores. Potencial de 39.080 clientes. Média de 170 CNPJs livres.',acoes:[
+'Identificar potencial de uso para automação contábil na carteira',
+'Identificar se o parceiro já usa concorrente',
+'Mapear a proposta do concorrente caso exista',
+'Apresentar diagnóstico com cálculo de produtividade usando a calculadora',
+'Fazer proposta oficial para iniciar piloto com 3 clientes'
+],casos:[{id:1816,nome:'Tactus Contabilidade Digital',est:0,eng:'100%',exp:39,livres:1526,ins:'1.526 CNPJs livres. Potencial de R$60k/mês em nova receita.'},{id:25829,nome:'Atlantis Contabilidade Digital',est:0,eng:'100%',exp:6,livres:744,ins:'744 CNPJs livres. Potencial de R$29k/mês.'}]},
+  E3:{name:'Não exporta · ≥75% · Contábil · +50',fila:'EXPANSÃO',rank:'#3',p:235,em:'—',eg:'100%',cl:158,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','Contábil','CNPJs livres > 50'],porque:'Potencial equivalente ao E2 mas com passo adicional obrigatório: apresentar exportação. Engajamento perfeito facilita a adoção. Migra naturalmente para E2 após exportar.',diag:'235 contadores. Potencial de 37.053 clientes.',acoes:['Apresentar exportação','Quando exportar: simular receita e pilotar'],casos:[{id:31949,nome:'DRE ASSESSORIA CONTABIL',est:0,eng:'100%',exp:0,livres:2041,ins:'2.041 CNPJs livres, eng 100%, zero exportações. R$81k/mês de potencial.'}]},
+  E4:{name:'Não exporta · ≥75% · BPO · +50',fila:'EXPANSÃO',rank:'#4',p:3,em:'—',eg:'100%',cl:134,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','BPO','CNPJs livres > 50'],porque:'BPO com engajamento alto e +50 CNPJs livres. Separado do E3 (Contábil) porque a oferta é diferente — Plano BPO com desconto conforme nível.',diag:'3 parceiros BPO com 134 CNPJs livres médios.',acoes:['Calcular desconto (mínimo 20% abaixo do plano atual)','Plano BPO para clientes disponíveis — só novos','Pilotar com os primeiros candidatos'],casos:[{id:52078,nome:'Voxel Gestão Financeira',est:0,eng:'100%',exp:0,livres:205,ins:'205 CNPJs livres, eng 100%. Candidato direto ao Plano BPO.'}]},
+  E5:{name:'Exporta · <75% · Contábil · +50',fila:'EXPANSÃO',rank:'#5',p:14,em:'—',eg:'—',cl:117,ratio:'—',crit:['Sem estoque','Eng < 75%','Exporta','Contábil','CNPJs livres > 50'],porque:'Usa automação e tem muito potencial mas engajamento abaixo de 75% trava a expansão. Ofertar mais licenças agora criaria estoque futuro.',diag:'14 contadores, 117 CNPJs livres médios.',acoes:['Investigar engajamento abaixo de 75%','Reativar clientes inativos','Quando ≥75%: migrar para E2 e expandir'],casos:[]},
+  E6:{name:'Exporta · ≥75% · Contábil · 11-50',fila:'EXPANSÃO',rank:'#6',p:100,em:'—',eg:'100%',cl:31,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Exporta','Contábil','CNPJs livres 11–50'],porque:'Mesmo perfil do E2 com potencial menor (11–50 vs +50). Ação idêntica, escala menor.',diag:'100 contadores. Potencial de 3.127 clientes.',acoes:['Simular receita incremental','Pilotar com os clientes disponíveis'],casos:[]},
+  E7:{name:'Não exporta · ≥75% · Contábil · 11-50',fila:'EXPANSÃO',rank:'#7',p:84,em:'—',eg:'100%',cl:31,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','Contábil','CNPJs livres 11–50'],porque:'Mesmo perfil do E3 com potencial menor.',diag:'84 contadores, 31 CNPJs livres médios.',acoes:['Apresentar exportação','Expandir após exportar'],casos:[]},
+  E8:{name:'Exporta · <75% · Contábil · 11-50',fila:'EXPANSÃO',rank:'#8',p:9,em:'—',eg:'—',cl:29,ratio:'—',crit:['Sem estoque','Eng < 75%','Exporta','Contábil','CNPJs livres 11–50'],porque:'Mesmo raciocínio do E5 em escala menor.',diag:'9 contadores.',acoes:['Resolver engajamento','Expandir quando ≥75%'],casos:[]},
+  E9:{name:'Não exporta · <75% · Contábil · 11-50',fila:'EXPANSÃO',rank:'#9',p:4,em:'—',eg:'—',cl:22,ratio:'—',crit:['Sem estoque','Eng < 75%','Não exporta','Contábil','CNPJs livres 11–50'],porque:'Sem exportação e eng baixo com potencial moderado.',diag:'4 contadores. Monitorar.',acoes:['Resolver engajamento','Apresentar exportação','Expandir'],casos:[]},
+  E10:{name:'Exporta · ≥75% · BPO · 11-50',fila:'EXPANSÃO',rank:'#10',p:3,em:'—',eg:'100%',cl:22,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Exporta','BPO','CNPJs livres 11–50'],porque:'BPO com condições favoráveis e 11–50 CNPJs livres.',diag:'3 parceiros BPO.',acoes:['Plano BPO para CNPJs disponíveis'],casos:[]},
+  E11:{name:'Não exporta · ≥75% · BPO · 11-50',fila:'EXPANSÃO',rank:'#11',p:3,em:'—',eg:'100%',cl:18,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','BPO','CNPJs livres 11–50'],porque:'BPO com eng alto e potencial moderado sem exportação.',diag:'3 parceiros BPO.',acoes:['Plano BPO para CNPJs disponíveis'],casos:[]},
+  E12:{name:'Exporta · ≥75% · Contábil · 0-10',fila:'EXPANSÃO',rank:'#12',p:25,em:'—',eg:'100%',cl:6,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Exporta','Contábil','CNPJs livres 0–10'],porque:'Condições ideais mas potencial pequeno. Monitorar crescimento.',diag:'25 contadores.',acoes:['Monitorar crescimento da carteira','Reclassificar quando > 10'],casos:[]},
+  E13:{name:'Exporta · <75% · Contábil · 0-10',fila:'EXPANSÃO',rank:'#13',p:2,em:'—',eg:'—',cl:6,ratio:'—',crit:['Sem estoque','Eng < 75%','Exporta','Contábil','0–10'],porque:'Potencial pequeno e eng em risco.',diag:'2 contadores.',acoes:['Monitorar sem ação ativa'],casos:[]},
+  E14:{name:'Não exporta · <75% · Contábil · 0-10',fila:'EXPANSÃO',rank:'#14',p:8,em:'—',eg:'—',cl:5,ratio:'—',crit:['Sem estoque','Eng < 75%','Não exporta','Contábil','0–10'],porque:'Situação mais desfavorável de expansão.',diag:'8 contadores.',acoes:['Monitorar','Aguardar crescimento'],casos:[]},
+  E15:{name:'Exporta · <75% · BPO · 0-10',fila:'EXPANSÃO',rank:'#15',p:2,em:'—',eg:'—',cl:4,ratio:'—',crit:['Sem estoque','Eng < 75%','Exporta','BPO','0–10'],porque:'BPO com potencial mínimo.',diag:'2 parceiros.',acoes:['Monitorar'],casos:[]},
+  E16:{name:'Exporta · ≥75% · BPO · 0-10',fila:'EXPANSÃO',rank:'#16',p:8,em:'—',eg:'100%',cl:4,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Exporta','BPO','0–10'],porque:'BPO saudável com carteira pequena ou bem penetrada.',diag:'8 parceiros.',acoes:['Monitorar crescimento'],casos:[]},
+  E17:{name:'Não exporta · ≥75% · Contábil · 0-10',fila:'EXPANSÃO',rank:'#17',p:26,em:'—',eg:'100%',cl:4,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','Contábil','0–10'],porque:'Eng bom mas potencial pequeno.',diag:'26 contadores.',acoes:['Apresentar exportação quando houver oportunidade','Monitorar'],casos:[]},
+  E18:{name:'Não exporta · ≥75% · BPO · 0-10',fila:'EXPANSÃO',rank:'#18',p:6,em:'—',eg:'100%',cl:3,ratio:'—',crit:['Sem estoque','Eng ≥ 75%','Não exporta','BPO','0–10'],porque:'BPO saudável com potencial mínimo.',diag:'6 parceiros.',acoes:['Monitorar','Quando > 10: reclassificar para E11 ou E4'],casos:[]}
+};
+
+function showC(code,el){
+  const c=CD[code];if(!c)return;
+  document.querySelectorAll('.ci').forEach(i=>i.classList.remove('active'));
+  if(el)el.classList.add('active');
+  const isRet=c.fila==='RETENÇÃO';
+  const isRO=code.startsWith('RO');
+  const ac=isRO?'var(--purple)':isRet?'var(--red)':'var(--green)';
+  const ab=isRO?'var(--purple-bg)':isRet?'var(--red-bg)':'var(--green-bg)';
+  const casosH=c.casos.length>0?`
+    <div style="margin-top:12px">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Casos reais</div>
+      ${c.casos.map(k=>`
+        <div class="ccase"><div class="cc-hdr"><span class="cc-id">ID ${k.id}</span><span class="cc-name">${k.nome}</span></div>
+        <div class="cc-metrics">
+          <div class="cc-m"><div class="cc-mv" style="color:${k.est>0?'var(--red)':'var(--green)'}">${k.est}</div><div class="cc-ml">Estoque</div></div>
+          <div class="cc-m"><div class="cc-mv">${k.eng}</div><div class="cc-ml">Eng.</div></div>
+          <div class="cc-m"><div class="cc-mv">${k.exp}</div><div class="cc-ml">Export.</div></div>
+          <div class="cc-m"><div class="cc-mv" style="color:${k.livres<0?'var(--red)':'var(--green)'}">${k.livres}</div><div class="cc-ml">CNPJs livres</div></div>
+        </div>
+        <div class="cc-ins"><strong>Insight:</strong> ${k.ins}</div></div>`).join('')}
+    </div>`:''
+  document.getElementById('darea').innerHTML=`
+    <div class="dhdr" style="border-left:3px solid ${ac}">
+      <div class="dtop"><span class="dcode" style="background:${ab};color:${ac}">${code}</span><span class="dfila">${c.fila}</span><span class="drank">${c.rank} · ${c.p} parceiros</span></div>
+      <div class="dname">${c.name}</div>
+      <div class="dcrit">${c.crit.map(x=>`<span class="cpill">${x}</span>`).join('')}</div>
+      <div class="dstats">
+        <div class="dstat"><div class="dstat-v">${c.p}</div><div class="dstat-l">Parceiros</div></div>
+        <div class="dstat"><div class="dstat-v">${c.em}</div><div class="dstat-l">Est. médio</div></div>
+        <div class="dstat"><div class="dstat-v">${c.eg}</div><div class="dstat-l">Eng. médio</div></div>
+        <div class="dstat"><div class="dstat-v">${c.cl}</div><div class="dstat-l">CNPJs livres</div></div>
+      </div>
+    </div>
+    <div class="dporque"><div class="dporque-t">Por que segmentamos assim</div><p>${c.porque}</p></div>
+    <div class="dbody">
+      <div class="dblk"><div class="dblk-t">Diagnóstico</div><p>${c.diag}</p></div>
+      <div class="dblk"><div class="dblk-t">Sequência de ação</div><ul class="alist">${c.acoes.map((a,i)=>`<li class="aitem"><span class="anum">${i+1}</span><span>${a}</span></li>`).join('')}</ul></div>
+    </div>${casosH}`;
+}
+
+function filterC(q){
+  document.querySelectorAll('.ci').forEach(b=>{
+    const t=b.querySelector('.ci-name').textContent.toLowerCase();
+    const cc=b.querySelector('.ccode').textContent.toLowerCase();
+    b.style.display=(t+cc).includes(q.toLowerCase())?'':'none';
+  });
+}
+
+// QUIZ
+function startQuiz(){
+  document.getElementById('qcontainer').innerHTML=`
+    <div class="qcard"><div class="qq">O parceiro tem licenças desengajadas (Estoque > 0)?</div>
+    <div class="qopts">
+      <button class="qbtn" onclick="qStep2('ret')">📦 Sim, tem estoque</button>
+      <button class="qbtn" onclick="qStep2('exp')">🎯 Não, sem estoque</button>
+    </div></div>`;
+}
+function qStep2(p){
+  if(p==='ret'){
+    document.getElementById('qcontainer').innerHTML=`
+      <div class="qcard"><div class="qq">Qual é o ratio (CNPJs livres ÷ Estoque)?</div>
+      <div class="qopts">
+        <button class="qbtn" onclick="qR('RO1','RO1 · Orientador — Pen Negativa','Mais licenças que clientes. Orientador para prospecção urgente.')">🔴 Negativo — mais licenças que clientes</button>
+        <button class="qbtn" onclick="qR('RO2','RO2 · Orientador — Clientes Insuficientes','Tem alguns clientes mas não suficientes. Orientador para captação.')">🟠 Entre 0 e 0,7 — poucos clientes</button>
+        <button class="qbtn" onclick="qStep3()">🟢 0,7 ou mais — clientes suficientes</button>
+      </div></div>`;
+  } else {
+    document.getElementById('qcontainer').innerHTML=`
+      <div class="qcard"><div class="qq">Quantos CNPJs livres?</div>
+      <div class="qopts">
+        <button class="qbtn" onclick="qExpStep('+50')">📈 Mais de 50</button>
+        <button class="qbtn" onclick="qExpStep('11-50')">📊 Entre 11 e 50</button>
+        <button class="qbtn" onclick="qR('E-monitorar','E12–E18 · Monitorar','Potencial insuficiente para ação ativa. Monitorar crescimento da carteira.')">📉 Menos de 10</button>
+      </div></div>`;
+  }
+}
+function qStep3(){
+  document.getElementById('qcontainer').innerHTML=`
+    <div class="qcard"><div class="qq">Qual o engajamento?</div>
+    <div class="qopts">
+      <button class="qbtn" onclick="qStep4('baixo')">⚠️ Abaixo de 75%</button>
+      <button class="qbtn" onclick="qStep4('alto')">✅ 75% ou mais</button>
+    </div></div>`;
+}
+function qStep4(eng){
+  document.getElementById('qcontainer').innerHTML=`
+    <div class="qcard"><div class="qq">O parceiro exporta?</div>
+    <div class="qopts">
+      <button class="qbtn" onclick="qRetR('${eng}','exp')">🔄 Sim</button>
+      <button class="qbtn" onclick="qRetR('${eng}','noexp')">❌ Não</button>
+    </div></div>`;
+}
+function qRetR(eng,exp){
+  const m={'baixo-exp':'R1 ou R7','baixo-noexp':'R2 ou R8','alto-exp':'R4 ou R10','alto-noexp':'R3 ou R11'};
+  const d={'baixo-exp':'Atribuir licenças com acompanhamento. Prioridade alta.','baixo-noexp':'Apresentar automação contábil antes de qualquer atribuição.','alto-exp':'Atribuição direta — base saudável, mais fácil de resolver.','alto-noexp':'Apresentar exportação para desbloquear o ciclo completo.'};
+  qR(m[eng+'-'+exp],m[eng+'-'+exp],d[eng+'-'+exp]);
+}
+function qExpStep(n){
+  document.getElementById('qcontainer').innerHTML+=`
+    <div class="qcard"><div class="qq">Exporta e engajamento ≥ 75%?</div>
+    <div class="qopts">
+      <button class="qbtn" onclick="qR('${n==='+'+'50'?'E2':'E6'}','${n==='+'+'50'?'E2':'E6'} · Expansão imediata','Condições ideais. Simular receita e pilotar agora.')">✅ Exporta + Eng ≥ 75%</button>
+      <button class="qbtn" onclick="qR('${n==='+'+'50'?'E3':'E7'}','${n==='+'+'50'?'E3':'E7'} · Introduzir automação','Eng alto mas sem exportação. Apresentar automação e expandir.')">🔄 Eng ≥ 75% mas não exporta</button>
+      <button class="qbtn" onclick="qR('${n==='+'+'50'?'E5':'E8 ou E9'}','${n==='+'+'50'?'E5':'E8 ou E9'} · Preparar','Engajamento baixo trava. Resolver antes de expandir.')">⚠️ Eng abaixo de 75%</button>
+    </div></div>`;
+}
+function qR(code,title,desc){
+  const c=document.getElementById('qcontainer');
+  c.innerHTML+=`<div class="qres"><div class="qres-t">${title}</div><div class="qres-b">${desc}</div>
+    <div class="qacts">
+      <button class="btn-p" onclick="showSec('clu',null);document.querySelectorAll('.ntab')[2].classList.add('active')">Ver clusters →</button>
+      <button class="btn-s" onclick="startQuiz()">Recomeçar</button>
+    </div></div>`;
+}
+startQuiz();
+</script>
+</body>
+</html>

@@ -71,31 +71,104 @@ export const Importacao: React.FC = () => {
     
     try {
       if (activeTab === 'partners') {
+        // 1. Buscar parceiros existentes para preservar gerente_id
+        const { data: existingPartners, error: fetchError } = await supabase
+          .from('partners')
+          .select('accountancy_id, gerente_id');
+        
+        if (fetchError) throw fetchError;
+        
+        const gerenteMap = new Map(
+          existingPartners?.map(ep => [ep.accountancy_id, ep.gerente_id]) || []
+        );
+
+        // 2. Preparar payload de UPSERT conforme especificação
         const partnersToUpsert = previewData.map(p => ({
           accountancy_id: p.id,
           nome: p.nome,
           gerente: p.gerente,
+          gerente_id: gerenteMap.get(p.id) || null,
           nivel: p.nivel,
           perfil_parceiro: p.perfil_parceiro,
           perfil_servico: p.perfil_servico,
           fila: p.fila,
+          faixa_engajamento: p.faixa_engajamento,
           licencas: p.licencas,
           licencas_engajadas: p.licencas_engajadas,
-          percentual_engajamento: p.percentual_engajamento,
           estoque: p.estoque,
+          percentual_engajamento: p.percentual_engajamento,
+          penetracao: p.penetracao,
+          exportacoes_90d: p.exportacoes_90d,
           cnpjs: p.cnpjs,
           cnpjs_livres: p.cnpjs_livres,
           contas_potencial: p.contas_potencial,
           ratio: p.ratio,
-          plano: p.plano,
-          updated_at: new Date().toISOString()
+          segmento: p.segmento,
+          atribuidas: p.atribuidas,
+          percentual_atribuidas: p.percentual_atribuidas,
+          usa_capro: p.usa_capro,
+          last_imported_at: new Date().toISOString()
         }));
 
-        const { error: upsertError } = await supabase
-          .from('partners')
-          .upsert(partnersToUpsert, { onConflict: 'accountancy_id' });
+        // Executar upsert em lotes (chunks de 500) para evitar estouro de tamanho de payload/URL (HTTP 400 Bad Request)
+        const CHUNK_SIZE = 500;
+        for (let i = 0; i < partnersToUpsert.length; i += CHUNK_SIZE) {
+          const chunk = partnersToUpsert.slice(i, i + CHUNK_SIZE);
+          const { error: upsertError } = await supabase
+            .from('partners')
+            .upsert(chunk, { onConflict: 'accountancy_id', ignoreDuplicates: false });
 
-        if (upsertError) throw upsertError;
+          if (upsertError) throw upsertError;
+        }
+
+        // 3. Buscar ids reais gerados pelo banco para registrar os snapshots em lotes
+        const partnerIdMap = new Map<string, string>();
+        const allAccountancyIds = partnersToUpsert.map(p => p.accountancy_id);
+
+        for (let i = 0; i < allAccountancyIds.length; i += CHUNK_SIZE) {
+          const idChunk = allAccountancyIds.slice(i, i + CHUNK_SIZE);
+          const { data: insertedChunk, error: selectError } = await supabase
+            .from('partners')
+            .select('id, accountancy_id')
+            .in('accountancy_id', idChunk);
+
+          if (selectError) throw selectError;
+
+          insertedChunk?.forEach(ip => {
+            partnerIdMap.set(ip.accountancy_id, ip.id);
+          });
+        }
+
+        // 4. Preparar e inserir snapshots em lotes (chunks de 500)
+        const snapshotsToInsert = previewData.map(p => {
+          const partner_id = partnerIdMap.get(p.id);
+          return {
+            partner_id,
+            accountancy_id: p.id,
+            imported_at: new Date().toISOString(),
+            licencas: p.licencas,
+            licencas_engajadas: p.licencas_engajadas,
+            estoque: p.estoque,
+            percentual_engajamento: p.percentual_engajamento,
+            penetracao: p.penetracao,
+            cnpjs: p.cnpjs,
+            cnpjs_livres: p.cnpjs_livres,
+            contas_potencial: p.contas_potencial,
+            ratio: p.ratio,
+            plano: p.segmento,
+            atribuidas: p.atribuidas,
+            percentual_atribuidas: p.percentual_atribuidas
+          };
+        }).filter(s => s.partner_id !== undefined);
+
+        for (let i = 0; i < snapshotsToInsert.length; i += CHUNK_SIZE) {
+          const snapshotChunk = snapshotsToInsert.slice(i, i + CHUNK_SIZE);
+          const { error: snapshotError } = await supabase
+            .from('partner_snapshots')
+            .insert(snapshotChunk);
+
+          if (snapshotError) throw snapshotError;
+        }
 
         // Registrar log de sucesso
         await supabase.from('import_logs').insert({

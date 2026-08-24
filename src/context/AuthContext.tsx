@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 interface User {
@@ -20,6 +20,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasLoggedAccess = useRef(false);
 
   const fetchUserProfile = async (userId: string) => {
     console.log('DEBUG [AuthContext]: Fetching profile for', userId);
@@ -27,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('id', userId)
+        .eq('auth_id', userId)
         .single();
       
       if (error) {
@@ -38,6 +39,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('DEBUG [AuthContext]: Profile loaded:', data);
       if (data) {
         setUser(data as User);
+
+        // Log access once per session
+        if (!hasLoggedAccess.current) {
+          hasLoggedAccess.current = true;
+          supabase
+            .from('access_logs')
+            .insert({ user_id: data.id })
+            .then(({ error: logError }) => {
+              if (logError) console.error('Error logging access:', logError);
+            });
+        }
       }
     } catch (err) {
       console.error('Error fetching user profile:', err);
@@ -47,34 +59,96 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const cleanSupabaseLocalStorage = () => {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase') || key.includes('auth-token'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+    } catch (e) {
+      console.error('Error clearing local storage:', e);
+    }
+  };
+
   useEffect(() => {
+    // Global listener for unhandled auth/token refresh rejection errors
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event?.reason;
+      const message = reason?.message || String(reason || '');
+      if (
+        message.includes('Invalid Refresh Token') ||
+        message.includes('Refresh Token Not Found') ||
+        message.includes('refresh_token_not_found') ||
+        reason?.name === 'AuthSessionMissingError'
+      ) {
+        console.warn('DEBUG [AuthContext]: Intercepted invalid refresh token error, clearing session.');
+        event.preventDefault(); // Prevent bubbling as uncaught error
+        cleanSupabaseLocalStorage();
+        supabase.auth.signOut().catch(() => {}).finally(() => {
+          setUser(null);
+          setLoading(false);
+        });
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
     // Check active session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.warn('DEBUG [AuthContext]: Error in getSession:', error.message);
+        cleanSupabaseLocalStorage();
+        supabase.auth.signOut().catch(() => {}).finally(() => {
+          setUser(null);
+          setLoading(false);
+        });
+        return;
+      }
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
       }
+    }).catch(err => {
+      console.warn('DEBUG [AuthContext]: Exception in getSession:', err);
+      cleanSupabaseLocalStorage();
+      supabase.auth.signOut().catch(() => {}).finally(() => {
+        setUser(null);
+        setLoading(false);
+      });
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('DEBUG [AuthContext]: Auth State Change:', event, session?.user?.id);
-      if (session) {
-        fetchUserProfile(session.user.id);
-      } else {
+      if (event === 'SIGNED_OUT' || !session) {
         console.log('DEBUG [AuthContext]: No session, clearing user');
         setUser(null);
         setLoading(false);
+      } else if (session) {
+        fetchUserProfile(session.user.id);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error during signOut:', err);
+    } finally {
+      cleanSupabaseLocalStorage();
+      setUser(null);
+    }
   };
 
   const isAdmin = user?.role === 'admin';

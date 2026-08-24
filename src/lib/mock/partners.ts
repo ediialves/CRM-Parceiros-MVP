@@ -19,7 +19,7 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 10,
     contas_potencial: 15,
     ratio: 3.2,
-    plano: 'Pro+',
+    segmento: 'Pro+',
   },
   {
     id: 'p2',
@@ -38,7 +38,7 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 15,
     contas_potencial: 5,
     ratio: 1.8,
-    plano: 'Basic',
+    segmento: 'Basic',
   },
   {
     id: 'p4',
@@ -57,7 +57,7 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 5,
     contas_potencial: 20,
     ratio: 4.0,
-    plano: 'Expert',
+    segmento: 'Expert',
   },
   {
     id: 'p5',
@@ -76,7 +76,7 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 20,
     contas_potencial: 3,
     ratio: 1.5,
-    plano: 'Basic',
+    segmento: 'Basic',
   },
   {
     id: 'p7',
@@ -95,7 +95,7 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 12,
     contas_potencial: 10,
     ratio: 3.0,
-    plano: 'Pro',
+    segmento: 'Pro',
   },
   {
     id: 'p8',
@@ -114,6 +114,6 @@ export const mockPartners: Partner[] = [
     cnpjs_livres: 4,
     contas_potencial: 8,
     ratio: 2.9,
-    plano: 'Pro+',
+    segmento: 'Pro+',
   },
 ];

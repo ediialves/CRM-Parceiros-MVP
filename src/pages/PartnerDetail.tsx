@@ -1,17 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
-import { Plus, Loader2, AlertCircle, Trash2, X } from 'lucide-react';
+import { Plus, Play, Loader2, AlertCircle, Trash2, X } from 'lucide-react';
 import { Task, Plan, Partner } from '../types';
 import { PartnerHeader } from '../components/partners/PartnerHeader';
 import { MetricsSection } from '../components/metrics/MetricsSection';
+import { PartnerHistoryChart } from '../components/partners/PartnerHistoryChart';
 import { TaskList } from '../components/tasks/TaskList';
 import { TaskModal } from '../components/tasks/TaskModal';
 import { PlanModal } from '../components/plans/PlanModal';
 import { PlanCard } from '../components/plans/PlanCard';
+import { PlanConclusionModal } from '../components/plans/PlanConclusionModal';
 import { useAuth } from '../context/AuthContext';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Button } from '../components/ui/Button';
 import { supabase } from '../lib/supabase';
+import { AddPlaybookModal } from '../components/playbooks/AddPlaybookModal';
 
 export const PartnerDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -26,71 +29,73 @@ export const PartnerDetail: React.FC = () => {
   const [partnerTasks, setPartnerTasks] = useState<Task[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [isPlaybookModalOpen, setIsPlaybookModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<Plan | null>(null);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [isResultModalOpen, setIsResultModalOpen] = useState(false);
-  const [resultDescription, setResultDescription] = useState('');
-  const [pendingTaskToggle, setPendingTaskToggle] = useState<{taskId: string, planId: string} | null>(null);
-  const [isSavingResult, setIsSavingResult] = useState(false);
+  const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+  const [isConclusionModalOpen, setIsConclusionModalOpen] = useState(false);
+  const [planToConclude, setPlanToConclude] = useState<Plan | null>(null);
+
+  const fetchPartnerData = async (showLoading = true) => {
+    if (!id) return;
+
+    try {
+      if (showLoading) setLoading(true);
+      // Buscar parceiro no Supabase usando accountancy_id (que vem da URL)
+      const { data, error: fetchError } = await supabase
+        .from('partners')
+        .select('*')
+        .eq('accountancy_id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      if (data) {
+        const mappedPartner: Partner = {
+          ...data,
+          id: data.accountancy_id // ID de exibição (70801)
+        };
+        setPartner(mappedPartner);
+        setPartnerUuid(data.id); // UUID real para queries
+
+        // Buscar todos os planos reais no Supabase - USANDO data.id (UUID real) ordenados por data
+        const { data: plansData, error: plansError } = await supabase
+          .from('plans')
+          .select('*')
+          .eq('partner_id', data.id)
+          .order('created_at', { ascending: false });
+
+        if (plansError) throw plansError;
+        setLocalPlans(plansData || []);
+
+        if (plansData && plansData.length > 0) {
+          const planIds = plansData.map(p => p.id);
+          setExpandedPlanId(prev => prev || planIds[0]); // Primeiro plano aberto por padrão se nenhum aberto
+          const { data: tasksData, error: tasksError } = await supabase
+            .from('tasks')
+            .select('*')
+            .in('plan_id', planIds)
+            .is('deletada_em', null);
+
+          if (tasksError) throw tasksError;
+          setPartnerTasks(tasksData || []);
+        } else {
+          setPartnerTasks([]);
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao buscar detalhes do parceiro:', err);
+      setError(err.message || 'Erro ao carregar dados');
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
 
   // Initial load
   useEffect(() => {
-    const fetchPartnerData = async () => {
-      if (!id) return;
-
-      try {
-        setLoading(true);
-        // Buscar parceiro no Supabase usando accountancy_id (que vem da URL)
-        const { data, error: fetchError } = await supabase
-          .from('partners')
-          .select('*')
-          .eq('accountancy_id', id)
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        if (data) {
-          const mappedPartner: Partner = {
-            ...data,
-            id: data.accountancy_id // ID de exibição (70801)
-          };
-          setPartner(mappedPartner);
-          setPartnerUuid(data.id); // UUID real para queries
-
-          // Buscar planos reais no Supabase - USANDO data.id (UUID real)
-          const { data: plansData, error: plansError } = await supabase
-            .from('plans')
-            .select('*')
-            .eq('partner_id', data.id)
-            .eq('ativo', true);
-
-          if (plansError) throw plansError;
-          setLocalPlans(plansData || []);
-
-          if (plansData && plansData.length > 0) {
-            const planIds = plansData.map(p => p.id);
-            const { data: tasksData, error: tasksError } = await supabase
-              .from('tasks')
-              .select('*')
-              .in('plan_id', planIds);
-
-            if (tasksError) throw tasksError;
-            setPartnerTasks(tasksData || []);
-          } else {
-            setPartnerTasks([]);
-          }
-        }
-      } catch (err: any) {
-        console.error('Erro ao buscar detalhes do parceiro:', err);
-        setError(err.message || 'Erro ao carregar dados');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPartnerData();
+    fetchPartnerData(true);
   }, [id]);
 
   // Calculating consolidated progress
@@ -99,6 +104,13 @@ export const PartnerDetail: React.FC = () => {
     const completed = partnerTasks.filter(t => t.status === 'concluida').length;
     return (completed / partnerTasks.length) * 100;
   }, [partnerTasks]);
+
+  // Check if current taskToEdit belongs to an automatic plan (created via playbook)
+  const isTaskToEditAutomatic = useMemo(() => {
+    if (!taskToEdit) return false;
+    const parentPlan = localPlans.find(p => p.id === taskToEdit.plan_id);
+    return !!(parentPlan && parentPlan.playbook_id);
+  }, [taskToEdit, localPlans]);
 
   if (loading) {
     return (
@@ -120,8 +132,9 @@ export const PartnerDetail: React.FC = () => {
     );
   }
 
-  // Permission check for "Novo Plano" - Allow Manager or Admin
-  const canCreatePlan = isAdmin || (user && user.id === partner.gerente_id);
+  // Permission checks
+  const isOwnerManager = Boolean(user && partner && user.id === partner.gerente_id);
+  const canCreatePlan = isAdmin || isOwnerManager;
 
   // Plan actions
   const handleAddPlan = () => setIsPlanModalOpen(true);
@@ -143,7 +156,8 @@ export const PartnerDetail: React.FC = () => {
       if (insertError) throw insertError;
 
       if (data) {
-        setLocalPlans(prev => [...prev, data]);
+        setLocalPlans(prev => [data, ...prev]);
+        setExpandedPlanId(data.id);
       }
     } catch (err: any) {
       console.error('Erro ao salvar plano:', err);
@@ -199,7 +213,7 @@ export const PartnerDetail: React.FC = () => {
     try {
       const { error: deleteError } = await supabase
         .from('tasks')
-        .delete()
+        .update({ deletada_em: new Date().toISOString() })
         .eq('id', taskId);
 
       if (deleteError) throw deleteError;
@@ -238,11 +252,10 @@ export const PartnerDetail: React.FC = () => {
     const tasksForPlan = partnerTasks.filter(t => t.plan_id === task.plan_id);
     const remainingTasks = tasksForPlan.filter(t => t.status !== 'concluida');
 
-    // Check if it's the last task and plan result is missing
-    if (remainingTasks.length === 1 && (!plan?.resultado || plan.resultado.trim() === '')) {
-      setPendingTaskToggle({ taskId, planId: task.plan_id });
-      setResultDescription('');
-      setIsResultModalOpen(true);
+    // Trigger automático ao concluir a última task pendente de um plano ativo
+    if (remainingTasks.length === 1 && remainingTasks[0].id === taskId && plan && plan.ativo && !plan.status_conclusao) {
+      setPlanToConclude(plan);
+      setIsConclusionModalOpen(true);
       return;
     }
 
@@ -263,51 +276,11 @@ export const PartnerDetail: React.FC = () => {
     }
   };
 
-  const handleConfirmResultAndComplete = async () => {
-    if (!pendingTaskToggle || !resultDescription.trim()) return;
-
-    try {
-      setIsSavingResult(true);
-      
-      // 1. Atualizar o plano com o resultado
-      const { data: updatedPlan, error: planError } = await supabase
-        .from('plans')
-        .update({ resultado: resultDescription })
-        .eq('id', pendingTaskToggle.planId)
-        .select()
-        .single();
-
-      if (planError) throw planError;
-
-      // 2. Concluir a task
-      const { error: taskError } = await supabase
-        .from('tasks')
-        .update({ status: 'concluida' })
-        .eq('id', pendingTaskToggle.taskId);
-
-      if (taskError) throw taskError;
-
-      // 3. Atualizar estado local
-      if (updatedPlan) {
-        setLocalPlans(prev => prev.map(p => p.id === updatedPlan.id ? updatedPlan : p));
-      }
-      
-      setPartnerTasks(prev => prev.map(t => 
-        t.id === pendingTaskToggle.taskId ? { ...t, status: 'concluida' } : t
-      ));
-
-      setIsResultModalOpen(false);
-      setPendingTaskToggle(null);
-    } catch (err: any) {
-      console.error('Erro ao salvar resultado e concluir task:', err);
-    } finally {
-      setIsSavingResult(false);
-    }
-  };
-
-  const handleSaveTask = async (taskData: Partial<Task>) => {
+  const handleSaveTask = async (taskDataArray: Partial<Task>[]) => {
     try {
       if (taskToEdit) {
+        // Para edição, pegamos apenas o primeiro item
+        const taskData = taskDataArray[0];
         const { error: updateError } = await supabase
           .from('tasks')
           .update(taskData)
@@ -319,22 +292,24 @@ export const PartnerDetail: React.FC = () => {
           t.id === taskToEdit.id ? { ...t, ...taskData } as Task : t
         ));
       } else {
+        // Para criação, inserimos todos os itens do array
         const { data, error: insertError } = await supabase
           .from('tasks')
-          .insert({
+          .insert(taskDataArray.map(t => ({
             plan_id: selectedPlanId || 'manual',
-            titulo: taskData.titulo || '',
-            status: taskData.status || 'backlog',
-            responsavel: taskData.responsavel || 'gerente',
+            titulo: t.titulo || '',
+            status: t.status || 'backlog',
+            responsavel: t.responsavel || 'gerente',
             created_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
+            data_conclusao_prevista: t.data_conclusao_prevista || null,
+            data_conclusao_original: t.data_conclusao_prevista || null,
+          })))
+          .select();
 
         if (insertError) throw insertError;
 
         if (data) {
-          setPartnerTasks(prev => [...prev, data]);
+          setPartnerTasks(prev => [...prev, ...data]);
         }
       }
       setIsTaskModalOpen(false);
@@ -348,6 +323,12 @@ export const PartnerDetail: React.FC = () => {
       <PartnerHeader partner={partner} />
       
       <MetricsSection partner={partner} />
+      
+      <PartnerHistoryChart 
+        partnerId={id} 
+        partnerUuid={partnerUuid} 
+        accountancyId={partner?.accountancy_id || id} 
+      />
 
       <section className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
@@ -356,10 +337,20 @@ export const PartnerDetail: React.FC = () => {
             <p className="text-sm text-text-secondary">Acompanhe e crie estratégias para este parceiro.</p>
           </div>
           {canCreatePlan && (
-            <Button onClick={handleAddPlan} className="flex items-center gap-2">
-              <Plus size={18} />
-              Novo Plano
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button 
+                onClick={() => setIsPlaybookModalOpen(true)} 
+                variant="secondary"
+                className="flex items-center gap-2 bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary border-none"
+              >
+                <Play size={14} className="fill-current" />
+                Aplicar Playbook
+              </Button>
+              <Button onClick={handleAddPlan} className="flex items-center gap-2">
+                <Plus size={18} />
+                Novo Plano
+              </Button>
+            </div>
           )}
         </div>
 
@@ -371,11 +362,11 @@ export const PartnerDetail: React.FC = () => {
           </div>
           <ProgressBar progress={consolidatedProgress} className="h-4" />
           <p className="text-xs text-text-secondary mt-3">
-            Baseado em {partnerTasks.length} tasks totais em {localPlans.length} planos ativos.
+            Baseado em {partnerTasks.length} tasks totais em {localPlans.length} planos.
           </p>
         </div>
 
-        <div className="space-y-12">
+        <div className="space-y-4">
           {localPlans.length > 0 ? (
             localPlans.map(plan => {
               const tasksForPlan = partnerTasks.filter(t => t.plan_id === plan.id);
@@ -383,65 +374,53 @@ export const PartnerDetail: React.FC = () => {
                 ? (tasksForPlan.filter(t => t.status === 'concluida').length / tasksForPlan.length) * 100
                 : 0;
 
+              // Botão Concluir Plano: visível para admin ou gerente dono se o plano estiver ativo e sem status_conclusao
+              const canConclude = (isAdmin || isOwnerManager) && plan.ativo === true && !plan.status_conclusao;
+
               return (
-                <div key={plan.id} className="space-y-6 group/plan">
-                  <div className="flex items-center justify-between gap-4">
-                    <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
-                       Estratégia: {plan.titulo}
-                       {canCreatePlan && (
-                          <button 
-                            onClick={() => {
-                              setPlanToDelete(plan);
-                              setIsDeleteDialogOpen(true);
-                            }}
-                            className="p-1 text-text-secondary hover:text-danger opacity-0 group-hover/plan:opacity-100 transition-all"
-                            title="Excluir plano"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                    </h2>
-                    <Button 
-                      onClick={() => handleAddTask(plan.id)}
-                      variant="ghost" 
-                      className="text-primary hover:text-primary-dark text-xs font-bold py-1 h-auto flex items-center gap-1"
-                    >
-                      <Plus size={14} />
-                      Nova Task
-                    </Button>
-                  </div>
-
-                  <PlanCard 
-                    plan={plan}
-                    tasks={tasksForPlan}
-                    progress={planProgress}
-                    onPlanUpdate={(updated) => setLocalPlans(prev => prev.map(p => p.id === updated.id ? updated : p))}
-                  />
-
-                  <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                    <div className="bg-gray-50/50 px-4 py-2 border-b border-border flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">Checklist de Execução</span>
-                      <span className="text-[10px] text-text-secondary">{tasksForPlan.length} tasks</span>
-                    </div>
-                    <div className="p-2">
-                      <TaskList 
-                        tasks={tasksForPlan} 
-                        onEditTask={handleEditTask}
-                        onDeleteTask={handleDeleteTask}
-                        onToggleStatus={handleToggleTaskStatus}
-                      />
-                    </div>
-                  </div>
-                </div>
+                <PlanCard 
+                  key={plan.id}
+                  plan={plan}
+                  tasks={tasksForPlan}
+                  progress={planProgress}
+                  isExpanded={expandedPlanId === plan.id}
+                  onToggle={() => setExpandedPlanId(prev => prev === plan.id ? null : plan.id)}
+                  onPlanUpdate={(updated) => setLocalPlans(prev => prev.map(p => p.id === updated.id ? updated : p))}
+                  onAddTask={() => handleAddTask(plan.id)}
+                  onDeletePlan={() => {
+                    setPlanToDelete(plan);
+                    setIsDeleteDialogOpen(true);
+                  }}
+                  onEditTask={handleEditTask}
+                  onDeleteTask={handleDeleteTask}
+                  onToggleTaskStatus={handleToggleTaskStatus}
+                  onConcludePlan={() => {
+                    setPlanToConclude(plan);
+                    setIsConclusionModalOpen(true);
+                  }}
+                  canEdit={canCreatePlan}
+                  canConclude={canConclude}
+                />
               );
             })
           ) : (
             <div className="p-12 text-center bg-surface rounded-xl border border-dashed border-border mt-8">
               <p className="text-text-secondary italic">Nenhum plano de ação ativo.</p>
               {canCreatePlan && (
-                <Button variant="ghost" onClick={handleAddPlan} className="mt-4 text-primary text-sm font-bold">
-                  Começar agora
-                </Button>
+                <div className="flex items-center justify-center gap-3 mt-4">
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => setIsPlaybookModalOpen(true)} 
+                    className="text-primary text-sm font-bold flex items-center gap-1.5"
+                  >
+                    <Play size={12} className="fill-current" />
+                    Aplicar Playbook
+                  </Button>
+                  <span className="text-text-secondary text-xs">•</span>
+                  <Button variant="ghost" onClick={handleAddPlan} className="text-primary text-sm font-bold">
+                    Começar agora
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -453,6 +432,7 @@ export const PartnerDetail: React.FC = () => {
         onClose={() => setIsTaskModalOpen(false)}
         onSave={handleSaveTask}
         taskToEdit={taskToEdit}
+        isAutomatic={isTaskToEditAutomatic}
       />
 
       <PlanModal 
@@ -460,6 +440,30 @@ export const PartnerDetail: React.FC = () => {
         onClose={() => setIsPlanModalOpen(false)}
         onSave={handleSavePlan}
       />
+
+      {isPlaybookModalOpen && partner && (
+        <AddPlaybookModal
+          partnerId={partnerUuid || partner.id_banco || partner.id}
+          partnerName={partner.nome}
+          onClose={() => setIsPlaybookModalOpen(false)}
+          onSuccess={() => fetchPartnerData(false)}
+        />
+      )}
+
+      {/* Modal de Conclusão de Plano */}
+      {isConclusionModalOpen && planToConclude && user && (
+        <PlanConclusionModal
+          isOpen={isConclusionModalOpen}
+          onClose={() => {
+            setIsConclusionModalOpen(false);
+            setPlanToConclude(null);
+          }}
+          planId={planToConclude.id}
+          planTitle={planToConclude.titulo}
+          userId={user.id}
+          onSuccess={() => fetchPartnerData(false)}
+        />
+      )}
 
       {/* Modal de Exclusão de Plano */}
       {isDeleteDialogOpen && (
@@ -501,58 +505,6 @@ export const PartnerDetail: React.FC = () => {
                 className="flex-1 bg-danger hover:bg-red-600 text-white font-bold"
               >
                 Excluir
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Modal de Resultado Obrigatório */}
-      {isResultModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-surface w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-border bg-gray-50/50">
-              <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                Conclusão do Plano
-              </h3>
-              <button 
-                onClick={() => setIsResultModalOpen(false)}
-                className="text-text-secondary hover:text-text-primary transition-colors"
-                disabled={isSavingResult}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-text-primary font-medium">
-                Esta é a última task do plano. Antes de concluir, descreva o resultado alcançado:
-              </p>
-              
-              <textarea
-                autoFocus
-                className="w-full p-3 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-primary h-32 resize-none"
-                placeholder="Descreva o que foi conquistado com este plano..."
-                value={resultDescription}
-                onChange={(e) => setResultDescription(e.target.value)}
-                disabled={isSavingResult}
-              />
-            </div>
-            
-            <div className="flex items-center gap-3 p-6 bg-gray-50/50 border-t border-border">
-              <Button 
-                variant="ghost" 
-                onClick={() => setIsResultModalOpen(false)}
-                className="flex-1 font-bold"
-                disabled={isSavingResult}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handleConfirmResultAndComplete}
-                className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold"
-                disabled={!resultDescription.trim() || isSavingResult}
-              >
-                {isSavingResult ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar'}
               </Button>
             </div>
           </div>
