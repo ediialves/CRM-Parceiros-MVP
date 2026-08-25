@@ -78,15 +78,22 @@ const formatCohortWeekLabel = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
 };
 
-const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
+type HeatDomain = { min: number; max: number };
+
+const getCohortHeatmapStyle = (val: number | null, domain?: HeatDomain): { style: React.CSSProperties; className: string } => {
   if (val === null || val === undefined || isNaN(val)) {
     return { style: {}, className: '' };
   }
 
-  const clamped = Math.max(0, Math.min(100, val));
-  const factor = clamped / 100;
+  // A escala usa o range real dos valores exibidos na tabela (em vez de assumir 0-100 fixo),
+  // para que o contraste branco -> verde escuro use toda a amplitude disponível.
+  const min = domain?.min ?? 0;
+  const max = domain?.max ?? 100;
+  const span = max - min || 1;
+  const clamped = Math.max(min, Math.min(max, val));
+  const factor = (clamped - min) / span;
 
-  // Escala contínua branco -> verde escuro (0% = branco, 100% = Green-900)
+  // Escala contínua branco -> verde escuro (menor valor do range = branco, maior = Green-900)
   const from: [number, number, number] = [255, 255, 255];
   const to: [number, number, number] = [20, 83, 45];
 
@@ -94,12 +101,12 @@ const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties
   const g = Math.round(from[1] + factor * (to[1] - from[1]));
   const b = Math.round(from[2] + factor * (to[2] - from[2]));
 
-  // A partir de ~65% o fundo fica escuro o suficiente para precisar de texto claro
-  const textColor = clamped >= 65 ? 'rgb(255, 255, 255)' : 'rgb(20, 83, 45)';
+  // A partir de ~65% do range o fundo fica escuro o suficiente para precisar de texto claro
+  const textColor = factor >= 0.65 ? 'rgb(255, 255, 255)' : 'rgb(20, 83, 45)';
 
   let fontWeightClass = 'font-medium';
-  if (clamped >= 85) fontWeightClass = 'font-bold';
-  else if (clamped >= 65) fontWeightClass = 'font-semibold';
+  if (factor >= 0.85) fontWeightClass = 'font-bold';
+  else if (factor >= 0.65) fontWeightClass = 'font-semibold';
 
   return {
     style: {
@@ -111,8 +118,8 @@ const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties
 };
 
 // Mesma escala branco -> verde escuro usada em todos os heatmaps de coorte deste dashboard.
-const getCohortBaseFixaHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
-  return getCohortHeatmapStyle(val);
+const getCohortBaseFixaHeatmapStyle = (val: number | null, domain?: HeatDomain): { style: React.CSSProperties; className: string } => {
+  return getCohortHeatmapStyle(val, domain);
 };
 
 export const DashboardGerencialV2: React.FC = () => {
@@ -2621,6 +2628,32 @@ export const DashboardGerencialV2: React.FC = () => {
     };
   }, [cohortEngagementData]);
 
+  // Domínio (min/max) real dos valores de cada heatmap de coorte, para que a escala de cor
+  // use todo o contraste disponível em vez de assumir um range fixo de 0-100.
+  const engagementHeatDomain = useMemo(() => {
+    const vals: number[] = [];
+    cohortEngagementData.cohorts.forEach((c) => c.weeksData.forEach((w) => {
+      if (w.avgEngagement !== null && w.avgEngagement !== undefined && !isNaN(w.avgEngagement)) vals.push(w.avgEngagement);
+    }));
+    [cohortEngagementData.summary4Weeks, cohortEngagementData.summary12Weeks].forEach((s) => {
+      s?.averages.forEach((a) => { if (a !== null && a !== undefined && !isNaN(a)) vals.push(a); });
+    });
+    if (vals.length === 0) return { min: 0, max: 100 };
+    return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [cohortEngagementData]);
+
+  const baseFixaHeatDomain = useMemo(() => {
+    const vals: number[] = [];
+    cohortBaseFixaData.cohorts.forEach((c) => c.weeksData.forEach((w) => {
+      if (w.valPct !== null && w.valPct !== undefined && !isNaN(w.valPct)) vals.push(w.valPct);
+    }));
+    [cohortBaseFixaData.summary4Weeks, cohortBaseFixaData.summary12Weeks].forEach((s) => {
+      s?.averages.forEach((a) => { if (a !== null && a !== undefined && !isNaN(a)) vals.push(a); });
+    });
+    if (vals.length === 0) return { min: 0, max: 100 };
+    return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [cohortBaseFixaData]);
+
   // Ranking de Planos de Retenção por Tipo (Segmento Histórico no momento da criação do plano S0 que começa com 'R')
   const retentionPlanRanking = useMemo(() => {
     if (!rawData) {
@@ -5054,7 +5087,7 @@ export const DashboardGerencialV2: React.FC = () => {
                             ? ''
                             : `${Number(w.avgEngagement).toFixed(1).replace('.', ',')}%`;
 
-                          const heat = isNull ? { style: {}, className: '' } : getCohortHeatmapStyle(w.avgEngagement);
+                          const heat = isNull ? { style: {}, className: '' } : getCohortHeatmapStyle(w.avgEngagement, engagementHeatDomain);
 
                           return (
                             <td
@@ -5088,7 +5121,7 @@ export const DashboardGerencialV2: React.FC = () => {
                         {cohortEngagementData.summary4Weeks.count > 0 ? cohortEngagementData.summary4Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
                       </td>
                       {cohortEngagementData.summary4Weeks.averages.map((avg, i) => {
-                        const heat = avg !== null ? getCohortHeatmapStyle(avg) : { style: {}, className: '' };
+                        const heat = avg !== null ? getCohortHeatmapStyle(avg, engagementHeatDomain) : { style: {}, className: '' };
                         return (
                           <td
                             key={i}
@@ -5116,7 +5149,7 @@ export const DashboardGerencialV2: React.FC = () => {
                         {cohortEngagementData.summary12Weeks.count > 0 ? cohortEngagementData.summary12Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
                       </td>
                       {cohortEngagementData.summary12Weeks.averages.map((avg, i) => {
-                        const heat = avg !== null ? getCohortHeatmapStyle(avg) : { style: {}, className: '' };
+                        const heat = avg !== null ? getCohortHeatmapStyle(avg, engagementHeatDomain) : { style: {}, className: '' };
                         return (
                           <td
                             key={i}
@@ -5778,7 +5811,7 @@ export const DashboardGerencialV2: React.FC = () => {
                             ? (w.semDado ? '—' : '')
                             : `${Number(w.valPct).toFixed(1).replace('.', ',')}%`;
 
-                          const heat = isNull ? { style: {}, className: '' } : getCohortBaseFixaHeatmapStyle(w.valPct);
+                          const heat = isNull ? { style: {}, className: '' } : getCohortBaseFixaHeatmapStyle(w.valPct, baseFixaHeatDomain);
 
                           return (
                             <td
@@ -5812,7 +5845,7 @@ export const DashboardGerencialV2: React.FC = () => {
                         {cohortBaseFixaData.summary4Weeks.count > 0 ? cohortBaseFixaData.summary4Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
                       </td>
                       {cohortBaseFixaData.summary4Weeks.averages.map((avg, i) => {
-                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg) : { style: {}, className: '' };
+                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg, baseFixaHeatDomain) : { style: {}, className: '' };
                         return (
                           <td
                             key={i}
@@ -5840,7 +5873,7 @@ export const DashboardGerencialV2: React.FC = () => {
                         {cohortBaseFixaData.summary12Weeks.count > 0 ? cohortBaseFixaData.summary12Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
                       </td>
                       {cohortBaseFixaData.summary12Weeks.averages.map((avg, i) => {
-                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg) : { style: {}, className: '' };
+                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg, baseFixaHeatDomain) : { style: {}, className: '' };
                         return (
                           <td
                             key={i}
