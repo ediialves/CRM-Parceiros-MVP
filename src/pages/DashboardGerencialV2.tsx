@@ -110,41 +110,9 @@ const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties
   };
 };
 
+// Mesma escala branco -> verde escuro usada em todos os heatmaps de coorte deste dashboard.
 const getCohortBaseFixaHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
-  if (val === null || val === undefined || isNaN(val)) {
-    return { style: {}, className: '' };
-  }
-
-  const clamped = Math.max(0, Math.min(100, val));
-  const intensity = clamped < 70 ? 0 : (clamped - 70) / 30;
-
-  if (intensity === 0) {
-    return {
-      style: {
-        backgroundColor: 'rgba(248, 250, 252, 0.6)',
-        color: 'rgb(51, 65, 85)',
-      },
-      className: 'font-medium',
-    };
-  }
-
-  // Gradiente linear de verde claro (70%) até verde escuro (100%)
-  const startBg = [220, 252, 231]; // Green-100
-  const endBg = [21, 128, 61];     // Green-700
-  const r = Math.round(startBg[0] + intensity * (endBg[0] - startBg[0]));
-  const g = Math.round(startBg[1] + intensity * (endBg[1] - startBg[1]));
-  const b = Math.round(startBg[2] + intensity * (endBg[2] - startBg[2]));
-
-  const textColor = intensity >= 0.5 ? 'rgb(255, 255, 255)' : 'rgb(20, 83, 45)';
-  const fontWeightClass = intensity >= 0.33 ? 'font-bold' : 'font-semibold';
-
-  return {
-    style: {
-      backgroundColor: `rgb(${r}, ${g}, ${b})`,
-      color: textColor,
-    },
-    className: fontWeightClass,
-  };
+  return getCohortHeatmapStyle(val);
 };
 
 export const DashboardGerencialV2: React.FC = () => {
