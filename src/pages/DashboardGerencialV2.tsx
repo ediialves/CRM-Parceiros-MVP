@@ -84,57 +84,22 @@ const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties
   }
 
   const clamped = Math.max(0, Math.min(100, val));
+  const factor = clamped / 100;
 
-  // Anchor points based on user's scale requirements:
-  // < 60%  -> Vermelho / rosa
-  // 60–64% -> Laranja claro
-  // 65–69% -> Amarelo / bege
-  // 70–74% -> Verde claro
-  // 75–79% -> Verde médio
-  // ≥ 80%  -> Verde forte
-  const stops: Array<{ pct: number; bg: [number, number, number] }> = [
-    { pct: 0,   bg: [254, 202, 202] }, // Vermelho (Red-200)
-    { pct: 59,  bg: [254, 226, 226] }, // Vermelho suave
-    { pct: 60,  bg: [254, 215, 170] }, // Laranja claro (Orange-200)
-    { pct: 65,  bg: [254, 240, 138] }, // Amarelo/bege (Yellow-200)
-    { pct: 70,  bg: [187, 247, 208] }, // Verde claro (Green-200)
-    { pct: 75,  bg: [134, 239, 172] }, // Verde médio (Green-300)
-    { pct: 80,  bg: [34, 197, 94]   }, // Verde forte (Green-500)
-    { pct: 100, bg: [21, 128, 61]   }, // Verde muito forte (Green-700)
-  ];
+  // Escala contínua branco -> verde escuro (0% = branco, 100% = Green-900)
+  const from: [number, number, number] = [255, 255, 255];
+  const to: [number, number, number] = [20, 83, 45];
 
-  let lower = stops[0];
-  let upper = stops[stops.length - 1];
+  const r = Math.round(from[0] + factor * (to[0] - from[0]));
+  const g = Math.round(from[1] + factor * (to[1] - from[1]));
+  const b = Math.round(from[2] + factor * (to[2] - from[2]));
 
-  for (let i = 0; i < stops.length - 1; i++) {
-    if (clamped >= stops[i].pct && clamped <= stops[i + 1].pct) {
-      lower = stops[i];
-      upper = stops[i + 1];
-      break;
-    }
-  }
-
-  const range = upper.pct - lower.pct;
-  const factor = range === 0 ? 0 : (clamped - lower.pct) / range;
-
-  const r = Math.round(lower.bg[0] + factor * (upper.bg[0] - lower.bg[0]));
-  const g = Math.round(lower.bg[1] + factor * (upper.bg[1] - lower.bg[1]));
-  const b = Math.round(lower.bg[2] + factor * (upper.bg[2] - lower.bg[2]));
-
-  let textColor = 'rgb(20, 83, 45)';
-  if (clamped < 60) {
-    textColor = 'rgb(153, 27, 27)';
-  } else if (clamped < 65) {
-    textColor = 'rgb(154, 52, 18)';
-  } else if (clamped < 70) {
-    textColor = 'rgb(113, 63, 18)';
-  } else if (clamped >= 80) {
-    textColor = 'rgb(255, 255, 255)';
-  }
+  // A partir de ~65% o fundo fica escuro o suficiente para precisar de texto claro
+  const textColor = clamped >= 65 ? 'rgb(255, 255, 255)' : 'rgb(20, 83, 45)';
 
   let fontWeightClass = 'font-medium';
-  if (clamped >= 80) fontWeightClass = 'font-bold';
-  else if (clamped >= 70) fontWeightClass = 'font-semibold';
+  if (clamped >= 85) fontWeightClass = 'font-bold';
+  else if (clamped >= 65) fontWeightClass = 'font-semibold';
 
   return {
     style: {
