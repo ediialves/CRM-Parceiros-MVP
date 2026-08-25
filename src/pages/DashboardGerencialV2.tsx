@@ -145,6 +145,43 @@ const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties
   };
 };
 
+const getCohortBaseFixaHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
+  if (val === null || val === undefined || isNaN(val)) {
+    return { style: {}, className: '' };
+  }
+
+  const clamped = Math.max(0, Math.min(100, val));
+  const intensity = clamped < 70 ? 0 : (clamped - 70) / 30;
+
+  if (intensity === 0) {
+    return {
+      style: {
+        backgroundColor: 'rgba(248, 250, 252, 0.6)',
+        color: 'rgb(51, 65, 85)',
+      },
+      className: 'font-medium',
+    };
+  }
+
+  // Gradiente linear de verde claro (70%) até verde escuro (100%)
+  const startBg = [220, 252, 231]; // Green-100
+  const endBg = [21, 128, 61];     // Green-700
+  const r = Math.round(startBg[0] + intensity * (endBg[0] - startBg[0]));
+  const g = Math.round(startBg[1] + intensity * (endBg[1] - startBg[1]));
+  const b = Math.round(startBg[2] + intensity * (endBg[2] - startBg[2]));
+
+  const textColor = intensity >= 0.5 ? 'rgb(255, 255, 255)' : 'rgb(20, 83, 45)';
+  const fontWeightClass = intensity >= 0.33 ? 'font-bold' : 'font-semibold';
+
+  return {
+    style: {
+      backgroundColor: `rgb(${r}, ${g}, ${b})`,
+      color: textColor,
+    },
+    className: fontWeightClass,
+  };
+};
+
 export const DashboardGerencialV2: React.FC = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
   
@@ -374,6 +411,7 @@ export const DashboardGerencialV2: React.FC = () => {
             const { data, error } = await supabase
               .from('partners')
               .select('id, gerente_id, gerente, segmento, fila')
+              .order('id', { ascending: true })
               .range(from, from + limit - 1);
             if (error) throw error;
             if (data && data.length > 0) {
@@ -397,6 +435,7 @@ export const DashboardGerencialV2: React.FC = () => {
             const { data, error } = await supabase
               .from('plans')
               .select('id, ativo, status_conclusao, partner_id, created_at, playbook_id')
+              .order('id', { ascending: true })
               .range(from, from + limit - 1);
             if (error) throw error;
             if (data && data.length > 0) {
@@ -412,26 +451,35 @@ export const DashboardGerencialV2: React.FC = () => {
 
         // 4. Paginated fetch of non-deleted tasks
         const fetchAllTasks = async () => {
-          let allTasks: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('tasks')
-              .select('id, status, deletada_em, data_conclusao_original, plan_id, ordem')
-              .is('deletada_em', null)
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allTasks = [...allTasks, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
+          try {
+            let allTasks: any[] = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+            while (hasMore) {
+              const { data, error } = await supabase
+                .from('tasks')
+                .select('id, status, deletada_em, data_conclusao_original, plan_id, ordem')
+                .is('deletada_em', null)
+                .order('id', { ascending: true })
+                .range(from, from + limit - 1);
+              if (error) {
+                console.warn('Aviso ao buscar lote de tasks:', error);
+                break;
+              }
+              if (data && data.length > 0) {
+                allTasks = [...allTasks, ...data];
+                if (data.length < limit) hasMore = false;
+                else from += limit;
+              } else {
+                hasMore = false;
+              }
             }
+            return allTasks;
+          } catch (err) {
+            console.warn('Falha ao buscar tasks:', err);
+            return [];
           }
-          return allTasks;
         };
 
         const fetchSnapshots = async () => {
@@ -2511,6 +2559,134 @@ export const DashboardGerencialV2: React.FC = () => {
       maxWeeks,
     };
   }, [cohortEngagementData, cohortLicencasData]);
+
+  // 6ª Tabela: Coorte de Engajamento — Base Fixa (Derivada de cohortEngagementData)
+  const cohortBaseFixaData = useMemo(() => {
+    if (cohortEngagementData.status === 'loading') {
+      return { status: 'loading' as const, cohorts: [], maxWeeks: 8, summary4Weeks: null, summary12Weeks: null };
+    }
+    if (cohortEngagementData.status === 'empty' || cohortEngagementData.cohorts.length === 0) {
+      return { status: 'empty' as const, cohorts: [], maxWeeks: 8, summary4Weeks: null, summary12Weeks: null };
+    }
+
+    const maxWeeks = cohortEngagementData.maxWeeks ?? 8;
+
+    const cohorts = cohortEngagementData.cohorts.map((engCohort) => {
+      // Denominador fixo: SOMA(licenças_totais de todos os parceiros da safra, no S0)
+      const s0Licencas = engCohort.weeksData[0]?.sumLicencas ?? 0;
+
+      const weeksData = engCohort.weeksData.map((w) => {
+        // Se semana não chegou ou sem dado
+        if (w.avgEngagement === null) {
+          return {
+            weekIndex: w.weekIndex,
+            valPct: null as number | null,
+            sumEngajadas: w.sumEngajadas,
+            s0Licencas,
+            semDado: false,
+          };
+        }
+
+        // Se denominador fixo for 0 (impossível dividir)
+        if (s0Licencas === 0) {
+          return {
+            weekIndex: w.weekIndex,
+            valPct: null as number | null,
+            sumEngajadas: w.sumEngajadas,
+            s0Licencas: 0,
+            semDado: true,
+          };
+        }
+
+        const valPct = (w.sumEngajadas / s0Licencas) * 100;
+
+        return {
+          weekIndex: w.weekIndex,
+          valPct,
+          sumEngajadas: w.sumEngajadas,
+          s0Licencas,
+          semDado: false,
+        };
+      });
+
+      return {
+        semanaEntrada: engCohort.semanaEntrada,
+        label: engCohort.label,
+        rawDateString: engCohort.rawDateString,
+        planCount: engCohort.planCount,
+        totalLicencas: engCohort.totalLicencas,
+        s0Licencas,
+        weeksData,
+      };
+    });
+
+    // Summary calculation for 4 and 12 weeks
+    const calculateColumnBasedAverages = (maxCount: number) => {
+      const sortedCohorts = [...cohorts].sort((a, b) => a.rawDateString.localeCompare(b.rawDateString));
+      const averages: (number | null)[] = [];
+      const usedCohortsSet = new Set<string>();
+
+      for (let wIdx = 0; wIdx <= maxWeeks; wIdx++) {
+        const validCohorts = sortedCohorts.filter(c => {
+          const val = c.weeksData[wIdx]?.valPct;
+          return val !== null && val !== undefined;
+        });
+
+        const lastNCohorts = validCohorts.slice(-maxCount);
+
+        if (lastNCohorts.length === 0) {
+          averages.push(null);
+        } else {
+          const totalEngajadas = lastNCohorts.reduce((acc, c) => acc + (c.weeksData[wIdx].sumEngajadas || 0), 0);
+          const totalS0Licencas = lastNCohorts.reduce((acc, c) => acc + (c.s0Licencas || 0), 0);
+          if (totalS0Licencas > 0) {
+            const pct = (totalEngajadas / totalS0Licencas) * 100;
+            averages.push(Number(pct.toFixed(1)));
+          } else {
+            averages.push(null);
+          }
+          lastNCohorts.forEach(c => usedCohortsSet.add(c.rawDateString));
+        }
+      }
+
+      if (usedCohortsSet.size === 0) {
+        return {
+          rangeLabel: '',
+          planCountSum: 0,
+          totalLicencasSum: 0,
+          averages,
+          count: 0
+        };
+      }
+
+      const usedCohortsList = sortedCohorts.filter(c => usedCohortsSet.has(c.rawDateString));
+      const firstDate = formatCohortWeekLabel(usedCohortsList[0].rawDateString);
+      const lastDate = formatCohortWeekLabel(usedCohortsList[usedCohortsList.length - 1].rawDateString);
+      const rangeLabel = `(${firstDate} a ${lastDate})`;
+
+      const planCountSum = usedCohortsList.reduce((acc, c) => acc + c.planCount, 0);
+      const totalLicencasSum = usedCohortsList.reduce((acc, c) => acc + c.totalLicencas, 0);
+
+      return {
+        rangeLabel,
+        planCountSum,
+        totalLicencasSum,
+        averages,
+        count: usedCohortsList.length
+      };
+    };
+
+    const summary4Weeks = calculateColumnBasedAverages(4);
+    const summary12Weeks = calculateColumnBasedAverages(12);
+
+    return {
+      status: 'ok' as const,
+      cohorts,
+      maxWeeks,
+      summary4Weeks,
+      summary12Weeks,
+    };
+  }, [cohortEngagementData]);
 
   // Ranking de Planos de Retenção por Tipo (Segmento Histórico no momento da criação do plano S0 que começa com 'R')
   const retentionPlanRanking = useMemo(() => {
@@ -5600,6 +5776,154 @@ export const DashboardGerencialV2: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Card: Coorte de Engajamento — Base Fixa */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm" id="card-coorte-engajamento-base-fixa">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6" id="header-coorte-engajamento-base-fixa">
+            <div>
+              <h3 className="text-lg font-bold text-text-primary" id="title-coorte-engajamento-base-fixa">
+                Coorte de Engajamento — Base Fixa
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5" id="desc-coorte-engajamento-base-fixa">
+                Mostra a evolução real do engajamento usando a base de licenças da entrada, sem distorção por ganho ou perda de licença na carteira.
+              </p>
+            </div>
+          </div>
+
+          {cohortBaseFixaData.status === 'loading' ? (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="text-sm font-medium">Carregando dados da coorte...</p>
+            </div>
+          ) : cohortBaseFixaData.status === 'empty' || cohortBaseFixaData.cohorts.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+              <p className="font-semibold text-sm text-text-primary">Nenhuma coorte encontrada para os filtros selecionados.</p>
+              <p className="text-xs mt-1 text-text-secondary">Tente ajustar os filtros de Plano, Gerente, Origem do Playbook ou Fila.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead>
+                  <tr className="border-b border-border bg-bg-secondary/30">
+                    <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                      Semanas
+                    </th>
+                    <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      Planos
+                    </th>
+                    <th className="py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                      Lic. Cobertas
+                    </th>
+                    {Array.from({ length: (cohortBaseFixaData.maxWeeks ?? 8) + 1 }).map((_, i) => (
+                      <th key={i} className="py-2.5 px-1.5 text-center min-w-[50px] font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        S{i}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {cohortBaseFixaData.cohorts.map((cohort, idx) => {
+                    const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                    const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                    return (
+                      <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                        <td className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                            <span>{cohort.label}</span>
+                          </div>
+                        </td>
+                        <td className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                          {cohort.planCount}
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap border-b border-border/40">
+                          {cohort.totalLicencas.toLocaleString('pt-BR')}
+                        </td>
+                        {cohort.weeksData.map((w) => {
+                          const isNull = w.valPct === null;
+                          const valDisplay = isNull
+                            ? (w.semDado ? '—' : '')
+                            : `${Number(w.valPct).toFixed(1).replace('.', ',')}%`;
+
+                          const heat = isNull ? { style: {}, className: '' } : getCohortBaseFixaHeatmapStyle(w.valPct);
+
+                          return (
+                            <td
+                              key={w.weekIndex}
+                              style={heat.style}
+                              className={`py-2 px-1.5 text-center text-xs whitespace-nowrap transition-colors border-b border-border/40 ${heat.className}`}
+                            >
+                              {valDisplay}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Rodapé: Linhas de resumo das médias de 4 semanas e 12 semanas */}
+                {cohortBaseFixaData.summary4Weeks && cohortBaseFixaData.summary12Weeks && (
+                  <tfoot className="border-t-2 border-border/80 bg-bg-secondary/30">
+                    {/* Linha Média Últimas 4 Semanas */}
+                    <tr className="bg-bg-secondary/20 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px] border-b border-border/60">
+                        <div className="flex items-center gap-1" title={cohortBaseFixaData.summary4Weeks.rangeLabel ? `Período: ${cohortBaseFixaData.summary4Weeks.rangeLabel}` : undefined}>
+                          <TrendingUp className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>Média 4 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortBaseFixaData.summary4Weeks.count > 0 ? cohortBaseFixaData.summary4Weeks.planCountSum : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-text-secondary whitespace-nowrap border-b border-border/60">
+                        {cohortBaseFixaData.summary4Weeks.count > 0 ? cohortBaseFixaData.summary4Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
+                      </td>
+                      {cohortBaseFixaData.summary4Weeks.averages.map((avg, i) => {
+                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg) : { style: {}, className: '' };
+                        return (
+                          <td
+                            key={i}
+                            style={heat.style}
+                            className={`py-2 px-1.5 text-center text-xs whitespace-nowrap border-b border-border/60 ${heat.className}`}
+                          >
+                            {avg !== null ? `${avg.toFixed(1).replace('.', ',')}%` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {/* Linha Média Últimas 12 Semanas */}
+                    <tr className="bg-bg-secondary/40 font-semibold text-text-primary">
+                      <td className="sticky left-0 z-20 bg-card py-2.5 px-2 whitespace-nowrap min-w-[100px]">
+                        <div className="flex items-center gap-1" title={cohortBaseFixaData.summary12Weeks.rangeLabel ? `Período: ${cohortBaseFixaData.summary12Weeks.rangeLabel}` : undefined}>
+                          <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Média 12 sem.</span>
+                        </div>
+                      </td>
+                      <td className="sticky left-[100px] z-20 bg-card py-2.5 px-2 text-center text-text-secondary whitespace-nowrap min-w-[65px] border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {cohortBaseFixaData.summary12Weeks.count > 0 ? cohortBaseFixaData.summary12Weeks.planCountSum : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-text-secondary whitespace-nowrap">
+                        {cohortBaseFixaData.summary12Weeks.count > 0 ? cohortBaseFixaData.summary12Weeks.totalLicencasSum.toLocaleString('pt-BR') : '—'}
+                      </td>
+                      {cohortBaseFixaData.summary12Weeks.averages.map((avg, i) => {
+                        const heat = avg !== null ? getCohortBaseFixaHeatmapStyle(avg) : { style: {}, className: '' };
+                        return (
+                          <td
+                            key={i}
+                            style={heat.style}
+                            className={`py-2 px-1.5 text-center text-xs whitespace-nowrap ${heat.className}`}
+                          >
+                            {avg !== null ? `${avg.toFixed(1).replace('.', ',')}%` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Card: Histórico de Licenças e Engajamento (Redesenhado) */}

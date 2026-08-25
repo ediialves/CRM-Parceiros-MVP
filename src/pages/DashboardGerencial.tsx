@@ -226,25 +226,34 @@ export const DashboardGerencial: React.FC = () => {
 
         // Fetch paginated tasks
         const fetchAllTasks = async () => {
-          let allTasks: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('tasks')
-              .select('id, status, created_at, data_conclusao_prevista, data_conclusao_original, deletada_em, plan_id, plans(partner_id, partners(gerente, gerente_id, segmento))')
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allTasks = [...allTasks, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
+          try {
+            let allTasks: any[] = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+            while (hasMore) {
+              const { data, error } = await supabase
+                .from('tasks')
+                .select('id, status, created_at, data_conclusao_prevista, data_conclusao_original, deletada_em, plan_id, plans(partner_id, partners(gerente, gerente_id, segmento))')
+                .order('id', { ascending: true })
+                .range(from, from + limit - 1);
+              if (error) {
+                console.warn('Aviso ao buscar lote de tasks:', error);
+                break;
+              }
+              if (data && data.length > 0) {
+                allTasks = [...allTasks, ...data];
+                if (data.length < limit) hasMore = false;
+                else from += limit;
+              } else {
+                hasMore = false;
+              }
             }
+            return allTasks;
+          } catch (err) {
+            console.warn('Falha ao buscar tasks:', err);
+            return [];
           }
-          return allTasks;
         };
 
         // Fetch paginated logs
