@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, FileUp, LayoutDashboard, X, BookOpen, FileText, Calendar, Megaphone, BarChart2 } from 'lucide-react';
+import { Users, FileUp, LayoutDashboard, X, BookOpen, FileText, Calendar, Megaphone, BarChart2, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -24,6 +24,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       { label: 'Dashboard gerencial', icon: LayoutDashboard, path: '/dashboard-gerencial' },
       { label: 'Dashboard gerencial V2', icon: LayoutDashboard, path: '/dashboard-gerencial-v2' },
       { label: 'Analytics de Playbooks', icon: BarChart2, path: '/playbooks-analytics' },
+      { label: 'Analytics de Campanhas', icon: TrendingUp, path: '/campanhas-analytics' },
       { label: 'Forecast semanal', icon: Calendar, path: '/account-planning' },
       { label: 'Playbook', icon: BookOpen, path: '/playbook' },
       { label: 'Importação', icon: FileUp, path: '/importacao' }

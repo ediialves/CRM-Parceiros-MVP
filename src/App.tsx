@@ -20,6 +20,7 @@ import { Campanhas } from './pages/Campanhas';
 import { CampanhaKanban } from './pages/CampanhaKanban';
 import Playbook from './pages/Playbook';
 import { PlaybooksAnalytics } from './pages/PlaybooksAnalytics';
+import { CampanhasAnalytics } from './pages/CampanhasAnalytics';
 import GuiaCRM from './pages/GuiaCRM';
 import { Login } from './pages/Login';
 import { Cadastro } from './pages/Cadastro';
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="playbooks-automaticos" element={<ProtectedRoute><PlaybooksAutomaticos /></ProtectedRoute>} />
         <Route path="playbooks-automaticos/:id" element={<ProtectedRoute><PlaybookAcompanhamento /></ProtectedRoute>} />
         <Route path="playbooks-analytics" element={<ProtectedRoute adminOnly><PlaybooksAnalytics /></ProtectedRoute>} />
+        <Route path="campanhas-analytics" element={<ProtectedRoute adminOnly><CampanhasAnalytics /></ProtectedRoute>} />
         <Route path="account-planning" element={<ProtectedRoute adminOnly><AccountPlanningPage /></ProtectedRoute>} />
         <Route path="importacao" element={<ProtectedRoute adminOnly><Importacao /></ProtectedRoute>} />
         <Route path="parceiros/:id" element={<PartnerDetail />} />
