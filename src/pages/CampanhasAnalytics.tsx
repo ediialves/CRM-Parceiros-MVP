@@ -325,6 +325,12 @@ export const CampanhasAnalytics: React.FC = () => {
   const [selectedSegmentos, setSelectedSegmentos] = useState<string[]>([]);
   const [selectedFila, setSelectedFila] = useState<'todos' | 'RETENÇÃO' | 'EXPANSÃO'>('todos');
 
+  // Universo das coortes (engajamento + licenças) e da 1ª série do gráfico de
+  // comparação. 'convertidos' = apenas cards com status 'converteu' (padrão,
+  // comportamento original); 'todos' = todos os parceiros que entraram em qualquer
+  // campanha, independentemente do status.
+  const [universe, setUniverse] = useState<'convertidos' | 'todos'>('convertidos');
+
   // Dropdown / busca
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
   const [campaignSearch, setCampaignSearch] = useState('');
@@ -545,6 +551,11 @@ export const CampanhasAnalytics: React.FC = () => {
     return passesPartnerFilters(cp.gerente, cp.segmento, cp.fila);
   };
 
+  // Card pertence ao universo selecionado (toggle Convertidos / Todos da campanha).
+  // 'convertidos' restringe a status 'converteu'; 'todos' aceita qualquer status.
+  const cardInUniverse = (cp: NormalizedCampaignPartner): boolean =>
+    universe === 'convertidos' ? cp.status === 'converteu' : true;
+
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // -------------------------------------------------------------------------
@@ -601,15 +612,15 @@ export const CampanhasAnalytics: React.FC = () => {
   const cohortData = useMemo(() => {
     if (!rawData) return { status: 'loading' as const, cohorts: [] as any[] };
 
-    const convertedCards = rawData.campaignPartners.filter(
-      (cp) => cp.status === 'converteu' && cardPassesFilters(cp)
+    const scopedCards = rawData.campaignPartners.filter(
+      (cp) => cardInUniverse(cp) && cardPassesFilters(cp)
     );
 
-    // Agrupa parceiros convertidos pela segunda-feira da semana de ENTRADA na
-    // campanha. Dedupe por partner_id dentro da mesma semana (um parceiro pode ter
-    // convertido em mais de uma campanha entrando na mesma semana).
+    // Agrupa parceiros do universo selecionado pela segunda-feira da semana de
+    // ENTRADA na campanha. Dedupe por partner_id dentro da mesma semana (um parceiro
+    // pode ter entrado/convertido em mais de uma campanha na mesma semana).
     const cohortMap = new Map<string, Set<string>>();
-    convertedCards.forEach((cp) => {
+    scopedCards.forEach((cp) => {
       if (!cp.entryDate) return;
       const monday = getMondayOfWeek(cp.entryDate);
       if (!monday) return;
@@ -718,7 +729,7 @@ export const CampanhasAnalytics: React.FC = () => {
       summary12Weeks: calculateColumnBasedAverages(12),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, todayStr]);
+  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, universe, todayStr]);
 
   const cohortHeatDomain = useMemo<HeatDomain>(() => {
     const vals: number[] = [];
@@ -739,15 +750,101 @@ export const CampanhasAnalytics: React.FC = () => {
   }, [cohortData]);
 
   // -------------------------------------------------------------------------
-  // Comparação: convertidos em campanha vs. resto da base (últimas 12 semanas)
+  // Coorte de LICENÇAS pós-entrada — evolução do total de licenças (Σ licencas do
+  // snapshot mais recente <= data de referência de cada coluna) dos parceiros de
+  // cada safra. Mesma mecânica temporal e mesmo universo (toggle) da coorte de
+  // engajamento; a diferença é a métrica exibida na célula.
+  //
+  // ESCOLHA (absoluto vs. delta): exibimos o TOTAL ABSOLUTO de licenças por célula,
+  // com S0 servindo de base de referência. A leitura horizontal (S0 -> Sn) já
+  // evidencia o aumento de licenças pós-entrada sem precisar transformar em delta,
+  // e o valor absoluto preserva a magnitude (importante porque licenças NÃO são
+  // 0–100 e o heatmap usa domínio dinâmico sobre o range real dos valores).
+  // -------------------------------------------------------------------------
+  const licencasCohortData = useMemo(() => {
+    if (!rawData) return { status: 'loading' as const, cohorts: [] as any[], maxWeeks: 8 };
+
+    const scopedCards = rawData.campaignPartners.filter(
+      (cp) => cardInUniverse(cp) && cardPassesFilters(cp)
+    );
+
+    // Mesmo agrupamento/dedupe por safra da coorte de engajamento.
+    const cohortMap = new Map<string, Set<string>>();
+    scopedCards.forEach((cp) => {
+      if (!cp.entryDate) return;
+      const monday = getMondayOfWeek(cp.entryDate);
+      if (!monday) return;
+      const set = cohortMap.get(monday) || new Set<string>();
+      set.add(cp.partner_id);
+      cohortMap.set(monday, set);
+    });
+
+    const sortedWeeks = Array.from(cohortMap.keys()).sort((a, b) => a.localeCompare(b));
+    if (sortedWeeks.length === 0) {
+      return { status: 'empty' as const, cohorts: [] as any[], maxWeeks: 8 };
+    }
+
+    const maxWeeksAvailable = Math.max(
+      8,
+      ...sortedWeeks.map((w) => Math.max(0, Math.floor(diffDaysBetween(w, todayStr) / 7)))
+    );
+
+    const cohorts = sortedWeeks.map((semanaEntrada) => {
+      const partnerIds = Array.from(cohortMap.get(semanaEntrada)!);
+      const label = formatCohortWeekLabel(semanaEntrada);
+      const planCount = partnerIds.length;
+
+      const weeksData: Array<{ weekIndex: number; totalLicencas: number | null }> = [];
+      for (let N = 0; N <= maxWeeksAvailable; N++) {
+        const dataReferencia = N === 0 ? addDays(semanaEntrada, 6) : addDays(semanaEntrada, N * 7);
+        // Coluna no futuro em relação a hoje => sem dado.
+        if (todayStr < (N === 0 ? semanaEntrada : dataReferencia)) {
+          weeksData.push({ weekIndex: N, totalLicencas: null });
+          continue;
+        }
+        let total = 0;
+        let hasData = false;
+        partnerIds.forEach((pid) => {
+          const snap = getSnapshotAt(rawData.snapshotsByPartner.get(pid), dataReferencia);
+          if (snap) {
+            total += snap.licencas;
+            hasData = true;
+          }
+        });
+        // Se nenhum parceiro da safra tem snapshot até a data => célula "sem dado".
+        weeksData.push({ weekIndex: N, totalLicencas: hasData ? total : null });
+      }
+
+      return { semanaEntrada, label, rawDateString: semanaEntrada, planCount, weeksData };
+    });
+
+    return { status: 'ok' as const, cohorts, maxWeeks: maxWeeksAvailable };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, universe, todayStr]);
+
+  // Domínio dinâmico do heatmap de licenças (min/max reais — licenças não são 0–100).
+  const licencasHeatDomain = useMemo<HeatDomain>(() => {
+    const vals: number[] = [];
+    (licencasCohortData.cohorts || []).forEach((c: any) =>
+      c.weeksData.forEach((w: any) => {
+        if (w.totalLicencas !== null && !isNaN(w.totalLicencas)) vals.push(w.totalLicencas);
+      })
+    );
+    if (vals.length === 0) return { min: 0, max: 1 };
+    return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [licencasCohortData]);
+
+  // -------------------------------------------------------------------------
+  // Comparação: em campanha vs. resto da base (últimas 12 semanas)
   // -------------------------------------------------------------------------
   const comparisonData = useMemo(() => {
     if (!rawData) return null;
 
-    // Grupo A: parceiros convertidos (passando filtros, inclusive campanha).
+    // Grupo A: parceiros do universo selecionado (convertidos, ou todos os que
+    // entraram em campanha), passando filtros — inclusive campanha.
     const convertedPartnerIds = new Set<string>(
       rawData.campaignPartners
-        .filter((cp) => cp.status === 'converteu' && cardPassesFilters(cp))
+        .filter((cp) => cardInUniverse(cp) && cardPassesFilters(cp))
         .map((cp) => cp.partner_id)
     );
 
@@ -804,9 +901,11 @@ export const CampanhasAnalytics: React.FC = () => {
       baseSeries,
       convertedCount: convertedPartnerIds.size,
       baseCount: basePartnerIds.size,
+      // Rótulo dinâmico da 1ª série conforme o toggle de universo.
+      groupALabel: universe === 'convertidos' ? 'Convertidos' : 'Em campanha (todos)',
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, todayStr]);
+  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, universe, todayStr]);
 
   // -------------------------------------------------------------------------
   // Ranking por campanha
@@ -861,12 +960,19 @@ export const CampanhasAnalytics: React.FC = () => {
 
   const comparisonChart = useMemo(() => {
     if (!comparisonData) return null;
+
+    // Cores neutras legíveis em tema claro/escuro (slate) para eixos/grade/legenda,
+    // já que o chart.js não lê os tokens Tailwind/CSS-vars do tema.
+    const axisColor = 'rgba(100, 116, 139, 0.9)'; // slate-500
+    const gridColor = 'rgba(148, 163, 184, 0.18)'; // slate-400 translúcido
+
     return {
+      // labels: exatamente as ~12 semanas em dd/MM (mesmo tamanho das séries).
       data: {
         labels: comparisonData.labels,
         datasets: [
           {
-            label: `Convertidos em campanha (${comparisonData.convertedCount})`,
+            label: `${comparisonData.groupALabel} (${comparisonData.convertedCount})`,
             data: comparisonData.convertedSeries,
             borderColor: '#4f46e5',
             backgroundColor: 'rgba(79, 70, 229, 0.1)',
@@ -890,21 +996,38 @@ export const CampanhasAnalytics: React.FC = () => {
         maintainAspectRatio: false,
         interaction: { mode: 'index' as const, intersect: false },
         plugins: {
-          legend: { position: 'top' as const },
+          legend: { position: 'top' as const, labels: { color: axisColor } },
           tooltip: {
             callbacks: {
               label: (ctx: any) =>
                 `${ctx.dataset.label}: ${
-                  ctx.parsed.y === null ? 'sem dado' : `${Number(ctx.parsed.y).toFixed(1).replace('.', ',')}%`
+                  ctx.parsed.y === null || ctx.parsed.y === undefined
+                    ? 'sem dado'
+                    : `${Number(ctx.parsed.y).toFixed(1).replace('.', ',')}%`
                 }`,
             },
           },
         },
         scales: {
+          // Eixo X categórico: as ~12 semanas (dd/MM). autoSkip evita sobreposição
+          // de rótulos e maxRotation:0 mantém as datas na horizontal e legíveis.
+          x: {
+            type: 'category' as const,
+            grid: { color: gridColor },
+            ticks: {
+              color: axisColor,
+              autoSkip: true,
+              maxRotation: 0,
+              minRotation: 0,
+              maxTicksLimit: 12,
+              autoSkipPadding: 8,
+            },
+          },
           y: {
             beginAtZero: true,
             max: 100,
-            ticks: { callback: (v: any) => `${v}%` },
+            grid: { color: gridColor },
+            ticks: { color: axisColor, callback: (v: any) => `${v}%` },
           },
         },
       },
@@ -920,6 +1043,7 @@ export const CampanhasAnalytics: React.FC = () => {
   }
 
   const maxWeeks = cohortData.status === 'ok' ? cohortData.maxWeeks ?? 8 : 8;
+  const maxWeeksLic = licencasCohortData.status === 'ok' ? licencasCohortData.maxWeeks ?? 8 : 8;
 
   return (
     <div className="min-h-screen bg-bg-primary p-6 md:p-8">
@@ -1138,6 +1262,39 @@ export const CampanhasAnalytics: React.FC = () => {
             ))}
           </div>
 
+          {/* Toggle de universo das coortes (Convertidos / Todos da campanha) */}
+          <div className="rounded-xl border border-border bg-card px-6 py-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              <div>
+                <h3 className="text-sm font-bold text-text-primary">Universo das coortes</h3>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  Define quais parceiros entram nas tabelas de coorte (engajamento e licenças) e na
+                  1ª série do gráfico de comparação.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 shadow-sm shrink-0">
+              {([
+                { key: 'convertidos', label: 'Convertidos' },
+                { key: 'todos', label: 'Todos da campanha' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setUniverse(opt.key)}
+                  className={`rounded-md py-1.5 px-3 text-xs font-semibold whitespace-nowrap transition-all ${
+                    universe === opt.key
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Coorte de Engajamento pós-entrada */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
             <div className="mb-6">
@@ -1145,8 +1302,9 @@ export const CampanhasAnalytics: React.FC = () => {
                 Coorte de Engajamento pós-entrada
               </h3>
               <p className="text-xs text-text-secondary mt-0.5">
-                Engajamento médio (% de licenças engajadas) dos parceiros convertidos, por semana de
-                entrada na campanha (S0 = semana de entrada; Sn = N semanas depois).
+                Engajamento médio (% de licenças engajadas) dos parceiros{' '}
+                {universe === 'convertidos' ? 'convertidos' : 'que entraram em campanha'}, por semana
+                de entrada na campanha (S0 = semana de entrada; Sn = N semanas depois).
               </p>
             </div>
 
@@ -1157,7 +1315,9 @@ export const CampanhasAnalytics: React.FC = () => {
             ) : cohortData.status === 'empty' || cohortData.cohorts.length === 0 ? (
               <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
                 <p className="font-semibold text-sm text-text-primary">
-                  Nenhum parceiro convertido encontrado para os filtros selecionados.
+                  {universe === 'convertidos'
+                    ? 'Nenhum parceiro convertido encontrado para os filtros selecionados.'
+                    : 'Nenhum parceiro em campanha encontrado para os filtros selecionados.'}
                 </p>
                 <p className="text-xs mt-1 text-text-secondary">
                   Ajuste os filtros de Campanha, Gerente, Plano ou Fila.
@@ -1319,6 +1479,102 @@ export const CampanhasAnalytics: React.FC = () => {
             )}
           </div>
 
+          {/* Coorte de Licenças pós-entrada (evolução do total de licenças) */}
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-text-primary">
+                Coorte de Licenças — evolução pós-entrada
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Total absoluto de licenças dos parceiros de cada safra ao longo das semanas após a
+                entrada na campanha (S0 = semana de entrada; Sn = N semanas depois). A leitura
+                horizontal (S0 → Sn) evidencia o aumento de licenças; o heatmap usa domínio dinâmico
+                pelo range real dos valores. Célula em branco (—) = safra sem snapshot até a data.
+              </p>
+            </div>
+
+            {licencasCohortData.status === 'loading' ? (
+              <div className="p-8 text-center text-text-secondary">
+                <p className="text-sm font-medium">Carregando dados da coorte...</p>
+              </div>
+            ) : licencasCohortData.status === 'empty' || licencasCohortData.cohorts.length === 0 ? (
+              <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+                <p className="font-semibold text-sm text-text-primary">
+                  {universe === 'convertidos'
+                    ? 'Nenhum parceiro convertido encontrado para os filtros selecionados.'
+                    : 'Nenhum parceiro em campanha encontrado para os filtros selecionados.'}
+                </p>
+                <p className="text-xs mt-1 text-text-secondary">
+                  Ajuste os filtros de Campanha, Gerente, Plano ou Fila.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto relative">
+                <table className="w-full text-left text-xs border-separate border-spacing-0">
+                  <thead>
+                    <tr className="border-b border-border bg-bg-secondary/30">
+                      <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                        Safra (entrada)
+                      </th>
+                      <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        Parceiros
+                      </th>
+                      {Array.from({ length: maxWeeksLic + 1 }).map((_, i) => (
+                        <th
+                          key={i}
+                          className="py-2.5 px-1.5 text-center min-w-[50px] font-bold text-text-secondary whitespace-nowrap border-b border-border"
+                        >
+                          S{i}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {licencasCohortData.cohorts.map((cohort: any, idx: number) => {
+                      const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                      const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                      return (
+                        <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                          <td
+                            className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                              <span>{cohort.label}</span>
+                            </div>
+                          </td>
+                          <td
+                            className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}
+                          >
+                            {cohort.planCount}
+                          </td>
+                          {cohort.weeksData.map((w: any) => {
+                            const isNull = w.totalLicencas === null;
+                            const heat = isNull
+                              ? { style: {}, className: '' }
+                              : getCohortHeatmapStyle(w.totalLicencas, licencasHeatDomain);
+                            return (
+                              <td
+                                key={w.weekIndex}
+                                style={heat.style}
+                                className={`py-2 px-1.5 text-center text-xs whitespace-nowrap transition-colors border-b border-border/40 ${heat.className}`}
+                              >
+                                {isNull ? '—' : w.totalLicencas.toLocaleString('pt-BR')}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {/* Sem rodapé de média: para licenças (contagem absoluta) uma "média por
+                      coluna" não tem leitura de negócio clara; a comparação relevante é a
+                      evolução horizontal por safra. */}
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Comparação convertidos vs. resto da base */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
             <div className="mb-4">
@@ -1326,8 +1582,11 @@ export const CampanhasAnalytics: React.FC = () => {
                 Convertidos vs. resto da base
               </h3>
               <p className="text-xs text-text-secondary mt-0.5">
-                Engajamento (% de licenças engajadas) nas últimas 12 semanas: parceiros convertidos em
-                campanha vs. parceiros que nunca passaram por nenhuma campanha.
+                Engajamento (% de licenças engajadas) nas últimas 12 semanas:{' '}
+                {universe === 'convertidos'
+                  ? 'parceiros convertidos em campanha'
+                  : 'todos os parceiros que entraram em campanha'}{' '}
+                vs. parceiros que nunca passaram por nenhuma campanha.
               </p>
             </div>
             {comparisonChart ? (
