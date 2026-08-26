@@ -14,6 +14,9 @@ import {
   Package,
   Target,
   Activity,
+  Info,
+  Scale,
+  ArrowUpRight,
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -116,6 +119,21 @@ const fmtPct = (val: number | null): string =>
   val === null || val === undefined || isNaN(val)
     ? '—'
     : `${Number(val).toFixed(1).replace('.', ',')}%`;
+
+// Inteiro com sinal explícito (+/−). Negativos já trazem o '-' nativo do toLocaleString.
+const fmtSignedInt = (val: number | null): string => {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  const s = Math.round(val).toLocaleString('pt-BR');
+  return val > 0 ? `+${s}` : s;
+};
+
+// Percentual com sinal. S0 = 0 (base) => 'n/a' para não dividir por zero.
+const fmtSignedPct = (val: number | null): string => {
+  if (val === null || val === undefined || isNaN(val)) return 'n/a';
+  if (val === 0) return '0,0%';
+  const s = `${Math.abs(val).toFixed(1).replace('.', ',')}%`;
+  return val > 0 ? `+${s}` : `-${s}`;
+};
 
 // Campos de entrada em fase de um card (campaign_partners). A ordem reflete a
 // progressão do funil; o menor não-nulo é o momento mais antigo do card.
@@ -330,6 +348,11 @@ export const CampanhasAnalytics: React.FC = () => {
   // comportamento original); 'todos' = todos os parceiros que entraram em qualquer
   // campanha, independentemente do status.
   const [universe, setUniverse] = useState<'convertidos' | 'todos'>('convertidos');
+
+  // Modo da coorte de LICENÇAS: 'movel' = base móvel (comportamento original, sofre
+  // distorção de composição) × 'fixa' = população travada no S0 (honesta). Default
+  // 'movel' para preservar a visão existente.
+  const [licencasCohortMode, setLicencasCohortMode] = useState<'movel' | 'fixa'>('movel');
 
   // Dropdown / busca
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
@@ -835,6 +858,222 @@ export const CampanhasAnalytics: React.FC = () => {
   }, [licencasCohortData]);
 
   // -------------------------------------------------------------------------
+  // Coorte de LICENÇAS — BASE FIXA (população travada no S0).
+  //
+  // Diferença vs. a coorte "móvel" acima: aqui a população é TRAVADA no S0 —
+  // entram só os parceiros da safra que já possuem ao menos um snapshot com
+  // imported_at <= data de referência do S0 (domingo da semana de entrada).
+  // Parceiros sem snapshot no S0 ficam PERMANENTEMENTE de fora (não entram em
+  // colunas posteriores). Cada célula Sn = Σ licencas do snapshot mais recente
+  // <= data de referência de Sn (carry-forward do último snapshot conhecido)
+  // dessa MESMA população. Assim o total só muda quando as licenças reais
+  // daqueles mesmos parceiros mudam — eliminando a distorção de composição
+  // (parceiro cujo 1º snapshot só aparece semanas depois inflando o total).
+  // Espelha o conceito de "Coorte de Engajamento — Base Fixa" do V2.
+  // -------------------------------------------------------------------------
+  const licencasCohortBaseFixaData = useMemo(() => {
+    if (!rawData) return { status: 'loading' as const, cohorts: [] as any[], maxWeeks: 8 };
+
+    const scopedCards = rawData.campaignPartners.filter(
+      (cp) => cardInUniverse(cp) && cardPassesFilters(cp)
+    );
+
+    const cohortMap = new Map<string, Set<string>>();
+    scopedCards.forEach((cp) => {
+      if (!cp.entryDate) return;
+      const monday = getMondayOfWeek(cp.entryDate);
+      if (!monday) return;
+      const set = cohortMap.get(monday) || new Set<string>();
+      set.add(cp.partner_id);
+      cohortMap.set(monday, set);
+    });
+
+    const sortedWeeks = Array.from(cohortMap.keys()).sort((a, b) => a.localeCompare(b));
+    if (sortedWeeks.length === 0) {
+      return { status: 'empty' as const, cohorts: [] as any[], maxWeeks: 8 };
+    }
+
+    const maxWeeksAvailable = Math.max(
+      8,
+      ...sortedWeeks.map((w) => Math.max(0, Math.floor(diffDaysBetween(w, todayStr) / 7)))
+    );
+
+    const cohorts = sortedWeeks.map((semanaEntrada) => {
+      const allPartnerIds = Array.from(cohortMap.get(semanaEntrada)!);
+      const s0Ref = addDays(semanaEntrada, 6); // domingo da semana de entrada
+
+      // População TRAVADA: só quem já tem snapshot <= S0. Guardamos a licença S0
+      // de cada um para o carry-forward e para o Δ.
+      const fixedPop: Array<{ pid: string; s0Licencas: number }> = [];
+      allPartnerIds.forEach((pid) => {
+        const snapS0 = getSnapshotAt(rawData.snapshotsByPartner.get(pid), s0Ref);
+        if (snapS0) fixedPop.push({ pid, s0Licencas: snapS0.licencas });
+      });
+
+      const excludedCount = allPartnerIds.length - fixedPop.length;
+      const s0Total = fixedPop.reduce((acc, p) => acc + p.s0Licencas, 0);
+
+      const weeksData: Array<{
+        weekIndex: number;
+        totalLicencas: number | null;
+        delta: number | null;
+        deltaPct: number | null;
+      }> = [];
+
+      for (let N = 0; N <= maxWeeksAvailable; N++) {
+        const dataReferencia = N === 0 ? s0Ref : addDays(semanaEntrada, N * 7);
+        // Coluna no futuro em relação a hoje => sem dado.
+        if (todayStr < dataReferencia) {
+          weeksData.push({ weekIndex: N, totalLicencas: null, delta: null, deltaPct: null });
+          continue;
+        }
+        if (fixedPop.length === 0) {
+          weeksData.push({ weekIndex: N, totalLicencas: null, delta: null, deltaPct: null });
+          continue;
+        }
+        // Carry-forward: como toda a população tem snapshot <= S0 <= dataReferencia,
+        // getSnapshotAt sempre retorna ao menos o snapshot de S0.
+        let total = 0;
+        fixedPop.forEach(({ pid }) => {
+          const snap = getSnapshotAt(rawData.snapshotsByPartner.get(pid), dataReferencia);
+          total += snap ? snap.licencas : 0;
+        });
+        const delta = total - s0Total;
+        const deltaPct = s0Total > 0 ? (delta / s0Total) * 100 : null;
+        weeksData.push({ weekIndex: N, totalLicencas: total, delta, deltaPct });
+      }
+
+      return {
+        semanaEntrada,
+        label: formatCohortWeekLabel(semanaEntrada),
+        rawDateString: semanaEntrada,
+        planCount: fixedPop.length,
+        excludedCount,
+        s0Total,
+        weeksData,
+      };
+    });
+
+    return { status: 'ok' as const, cohorts, maxWeeks: maxWeeksAvailable };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, universe, todayStr]);
+
+  // Domínio dinâmico do heatmap da base fixa (sobre os totais absolutos).
+  const licencasBaseFixaHeatDomain = useMemo<HeatDomain>(() => {
+    const vals: number[] = [];
+    (licencasCohortBaseFixaData.cohorts || []).forEach((c: any) =>
+      c.weeksData.forEach((w: any) => {
+        if (w.totalLicencas !== null && !isNaN(w.totalLicencas)) vals.push(w.totalLicencas);
+      })
+    );
+    if (vals.length === 0) return { min: 0, max: 1 };
+    return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [licencasCohortBaseFixaData]);
+
+  // -------------------------------------------------------------------------
+  // Reconciliação "Reportado vs. Real" — decompõe o aumento de licenças em:
+  //  (a) o que o time REGISTROU como vendido (Σ licencas_convertidas), e
+  //  (b) o aumento líquido REAL das licenças da população fixa (base fixa por
+  //      parceiro: S0 = domingo da semana de entrada; Δ = licencas_hoje − licencas_S0).
+  // A diferença (b − a) é o "crescimento não reportado", que decompomos por grupo
+  // para separar venda/expansão não registrada de estabilidade/queda.
+  // Respeita o toggle de universo e os filtros globais.
+  // -------------------------------------------------------------------------
+  const reconciliationData = useMemo(() => {
+    if (!rawData) return null;
+
+    const scopedCards = rawData.campaignPartners.filter(
+      (cp) => cardInUniverse(cp) && cardPassesFilters(cp)
+    );
+
+    // Reportado: Σ licencas_convertidas dos cards 'converteu' que passam nos filtros.
+    // Independe do universo — "reportado vendido" é, por definição, sobre convertidos
+    // (mesma base do KPI "Licenças vendidas" e do ranking).
+    const convertedCards = rawData.campaignPartners.filter(
+      (cp) => cp.status === 'converteu' && cardPassesFilters(cp)
+    );
+    const reportedLicencas = convertedCards.reduce(
+      (acc, cp) => acc + (cp.licencas_convertidas || 0),
+      0
+    );
+    const reportedConvertidosCount = new Set(convertedCards.map((cp) => cp.partner_id)).size;
+
+    // População do universo, deduplicada por partner_id, com a data de entrada mais
+    // ANTIGA entre os cards do parceiro (âncora do S0). Marca se o parceiro é
+    // convertido (algum card 'converteu' no escopo) para a decomposição.
+    const perPartner = new Map<string, { entryDate: string | null; converted: boolean }>();
+    scopedCards.forEach((cp) => {
+      const prev = perPartner.get(cp.partner_id);
+      const isConv = cp.status === 'converteu';
+      if (!prev) {
+        perPartner.set(cp.partner_id, { entryDate: cp.entryDate, converted: isConv });
+      } else {
+        let entryDate = prev.entryDate;
+        if (cp.entryDate && (!entryDate || cp.entryDate < entryDate)) entryDate = cp.entryDate;
+        perPartner.set(cp.partner_id, { entryDate, converted: prev.converted || isConv });
+      }
+    });
+
+    // Base fixa por parceiro: fora da base se não tem snapshot <= S0.
+    let realNetIncrease = 0;
+    const grpConv = { count: 0, delta: 0 };
+    const grpNaoConvCresceu = { count: 0, delta: 0 };
+    const grpNaoConvEstavelQueda = { count: 0, delta: 0 };
+    let fixedBaseCount = 0;
+    let excludedNoS0 = 0;
+
+    perPartner.forEach((info, pid) => {
+      if (!info.entryDate) {
+        excludedNoS0++;
+        return;
+      }
+      const monday = getMondayOfWeek(info.entryDate);
+      if (!monday) {
+        excludedNoS0++;
+        return;
+      }
+      const s0Ref = addDays(monday, 6);
+      const snaps = rawData.snapshotsByPartner.get(pid);
+      const snapS0 = getSnapshotAt(snaps, s0Ref);
+      if (!snapS0) {
+        // Sem snapshot no S0 => fora da base fixa (não entra depois).
+        excludedNoS0++;
+        return;
+      }
+      const snapNow = getSnapshotAt(snaps, todayStr); // >= snapS0, sempre existe
+      const licNow = snapNow ? snapNow.licencas : snapS0.licencas;
+      const delta = licNow - snapS0.licencas;
+      realNetIncrease += delta;
+      fixedBaseCount++;
+      if (info.converted) {
+        grpConv.count++;
+        grpConv.delta += delta;
+      } else if (delta > 0) {
+        grpNaoConvCresceu.count++;
+        grpNaoConvCresceu.delta += delta;
+      } else {
+        grpNaoConvEstavelQueda.count++;
+        grpNaoConvEstavelQueda.delta += delta;
+      }
+    });
+
+    const diff = realNetIncrease - reportedLicencas;
+
+    return {
+      reportedLicencas,
+      reportedConvertidosCount,
+      realNetIncrease,
+      diff,
+      fixedBaseCount,
+      excludedNoS0,
+      grpConv,
+      grpNaoConvCresceu,
+      grpNaoConvEstavelQueda,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawData, selectedCampaigns, selectedGerentes, selectedSegmentos, selectedFila, universe, todayStr]);
+
+  // -------------------------------------------------------------------------
   // Comparação: em campanha vs. resto da base (últimas 12 semanas)
   // -------------------------------------------------------------------------
   const comparisonData = useMemo(() => {
@@ -1044,6 +1283,8 @@ export const CampanhasAnalytics: React.FC = () => {
 
   const maxWeeks = cohortData.status === 'ok' ? cohortData.maxWeeks ?? 8 : 8;
   const maxWeeksLic = licencasCohortData.status === 'ok' ? licencasCohortData.maxWeeks ?? 8 : 8;
+  const maxWeeksLicFixa =
+    licencasCohortBaseFixaData.status === 'ok' ? licencasCohortBaseFixaData.maxWeeks ?? 8 : 8;
 
   return (
     <div className="min-h-screen bg-bg-primary p-6 md:p-8">
@@ -1295,6 +1536,187 @@ export const CampanhasAnalytics: React.FC = () => {
             </div>
           </div>
 
+          {/* Reconciliação: Reportado vs. Real (núcleo do painel) */}
+          {reconciliationData && (
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Scale className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                  <h3 className="text-lg font-bold text-text-primary">
+                    Reconciliação — Reportado vs. Real
+                  </h3>
+                </div>
+                <p className="text-xs text-text-secondary mt-1">
+                  Compara o que o time registrou como vendido (Σ licenças convertidas) com o
+                  aumento líquido REAL de licenças da população travada no S0 (base fixa por
+                  parceiro: S0 = semana de entrada; Δ = licenças de hoje − licenças no S0), e
+                  decompõe a diferença por grupo. Respeita o universo e os filtros selecionados.
+                </p>
+              </div>
+
+              {/* Cards de KPI da reconciliação */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                <div className="rounded-xl border border-border bg-bg-secondary/20 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="rounded-lg p-1.5 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
+                      <Package className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      Reportado vendido
+                    </span>
+                  </div>
+                  <p className="text-2xl font-extrabold text-text-primary">
+                    {reconciliationData.reportedLicencas.toLocaleString('pt-BR')}
+                  </p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {reconciliationData.reportedConvertidosCount.toLocaleString('pt-BR')} parceiro(s)
+                    convertido(s)
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border bg-bg-secondary/20 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="rounded-lg p-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                      <TrendingUp className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      Aumento real (base fixa)
+                    </span>
+                  </div>
+                  <p
+                    className={`text-2xl font-extrabold ${
+                      reconciliationData.realNetIncrease > 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : reconciliationData.realNetIncrease < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-text-primary'
+                    }`}
+                  >
+                    {fmtSignedInt(reconciliationData.realNetIncrease)}
+                  </p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {reconciliationData.fixedBaseCount.toLocaleString('pt-BR')} parceiro(s) na base
+                    fixa
+                    {reconciliationData.excludedNoS0 > 0
+                      ? ` · ${reconciliationData.excludedNoS0} sem snapshot no S0 (fora)`
+                      : ''}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border bg-bg-secondary/20 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="rounded-lg p-1.5 bg-fuchsia-50 dark:bg-fuchsia-950/40 text-fuchsia-600 dark:text-fuchsia-400">
+                      <ArrowUpRight className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                      Crescimento não reportado
+                    </span>
+                  </div>
+                  <p
+                    className={`text-2xl font-extrabold ${
+                      reconciliationData.diff > 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : reconciliationData.diff < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-text-primary'
+                    }`}
+                  >
+                    {fmtSignedInt(reconciliationData.diff)}
+                  </p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    aumento real − reportado
+                    {reconciliationData.diff > 0 ? ' · há crescimento além do reportado' : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* Tabela de decomposição do aumento real */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm border-separate border-spacing-0">
+                  <thead>
+                    <tr className="border-b border-border bg-bg-secondary/30">
+                      <th className="py-2.5 px-3 font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        Decomposição do aumento real
+                      </th>
+                      <th className="py-2.5 px-3 text-center font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        Parceiros
+                      </th>
+                      <th className="py-2.5 px-3 text-center font-bold text-text-secondary whitespace-nowrap border-b border-border">
+                        Δ licenças
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {[
+                      {
+                        label: 'Convertidos (marcados Converteu)',
+                        grp: reconciliationData.grpConv,
+                      },
+                      {
+                        label: 'Não convertidos que cresceram (expansão não reportada)',
+                        grp: reconciliationData.grpNaoConvCresceu,
+                      },
+                      {
+                        label: 'Não convertidos estáveis / em queda',
+                        grp: reconciliationData.grpNaoConvEstavelQueda,
+                      },
+                    ].map((row, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10'}>
+                        <td className="py-2.5 px-3 font-medium text-text-primary border-b border-border/40">
+                          {row.label}
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-text-primary whitespace-nowrap border-b border-border/40">
+                          {row.grp.count.toLocaleString('pt-BR')}
+                        </td>
+                        <td
+                          className={`py-2.5 px-3 text-center font-bold whitespace-nowrap border-b border-border/40 ${
+                            row.grp.delta > 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : row.grp.delta < 0
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-text-secondary'
+                          }`}
+                        >
+                          {fmtSignedInt(row.grp.delta)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-bg-secondary/40 font-bold text-text-primary">
+                      <td className="py-2.5 px-3 whitespace-nowrap">Total (= aumento real)</td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {reconciliationData.fixedBaseCount.toLocaleString('pt-BR')}
+                      </td>
+                      <td
+                        className={`py-2.5 px-3 text-center whitespace-nowrap ${
+                          reconciliationData.realNetIncrease > 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : reconciliationData.realNetIncrease < 0
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-text-secondary'
+                        }`}
+                      >
+                        {fmtSignedInt(reconciliationData.realNetIncrease)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Aviso de atribuição */}
+              <div className="mt-4 flex items-start gap-2 text-text-secondary text-xs">
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <p>
+                  Um aumento de licenças não é necessariamente causado pela campanha — pode haver
+                  crescimento orgânico do parceiro. A base fixa remove a distorção de composição
+                  (parceiros que entram na medição em semanas diferentes), mas não prova
+                  causalidade.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Coorte de Engajamento pós-entrada */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
             <div className="mb-6">
@@ -1481,19 +1903,160 @@ export const CampanhasAnalytics: React.FC = () => {
 
           {/* Coorte de Licenças pós-entrada (evolução do total de licenças) */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-text-primary">
-                Coorte de Licenças — evolução pós-entrada
-              </h3>
-              <p className="text-xs text-text-secondary mt-0.5">
-                Total absoluto de licenças dos parceiros de cada safra ao longo das semanas após a
-                entrada na campanha (S0 = semana de entrada; Sn = N semanas depois). A leitura
-                horizontal (S0 → Sn) evidencia o aumento de licenças; o heatmap usa domínio dinâmico
-                pelo range real dos valores. Célula em branco (—) = safra sem snapshot até a data.
-              </p>
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-text-primary">
+                  Coorte de Licenças — evolução pós-entrada
+                </h3>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  {licencasCohortMode === 'movel' ? (
+                    <>
+                      <strong>Base móvel:</strong> total absoluto de licenças dos parceiros de cada
+                      safra ao longo das semanas após a entrada (S0 = semana de entrada; Sn = N
+                      semanas depois). Sofre distorção de composição: parceiros cujo 1º snapshot só
+                      aparece semanas depois entram no total mais tarde, inflando o crescimento sem
+                      venda real. Célula em branco (—) = safra sem snapshot até a data.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Base fixa (S0):</strong> população TRAVADA no S0 — só parceiros com
+                      snapshot até o S0 entram (os demais ficam fora, não entram depois). Cada
+                      célula carrega o último snapshot conhecido, então o total só muda quando as
+                      licenças reais daqueles mesmos parceiros mudam, sem distorção de composição.
+                      Cada célula mostra o total e o Δ vs. S0 (absoluto e %).
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center rounded-lg border border-border bg-card p-1 gap-1 shadow-sm shrink-0">
+                {([
+                  { key: 'movel', label: 'Base móvel' },
+                  { key: 'fixa', label: 'Base fixa (S0)' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setLicencasCohortMode(opt.key)}
+                    className={`rounded-md py-1.5 px-3 text-xs font-semibold whitespace-nowrap transition-all ${
+                      licencasCohortMode === opt.key
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-secondary/20'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {licencasCohortData.status === 'loading' ? (
+            {licencasCohortMode === 'fixa' ? (
+              licencasCohortBaseFixaData.status === 'loading' ? (
+                <div className="p-8 text-center text-text-secondary">
+                  <p className="text-sm font-medium">Carregando dados da coorte...</p>
+                </div>
+              ) : licencasCohortBaseFixaData.status === 'empty' ||
+                licencasCohortBaseFixaData.cohorts.length === 0 ? (
+                <div className="p-8 text-center text-text-secondary bg-bg-secondary/20 rounded-lg">
+                  <p className="font-semibold text-sm text-text-primary">
+                    {universe === 'convertidos'
+                      ? 'Nenhum parceiro convertido encontrado para os filtros selecionados.'
+                      : 'Nenhum parceiro em campanha encontrado para os filtros selecionados.'}
+                  </p>
+                  <p className="text-xs mt-1 text-text-secondary">
+                    Ajuste os filtros de Campanha, Gerente, Plano ou Fila.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto relative">
+                  <table className="w-full text-left text-xs border-separate border-spacing-0">
+                    <thead>
+                      <tr className="border-b border-border bg-bg-secondary/30">
+                        <th className="sticky left-0 z-30 bg-card py-2.5 px-2 font-bold text-text-secondary whitespace-nowrap min-w-[100px] border-b border-border">
+                          Safra (entrada)
+                        </th>
+                        <th className="sticky left-[100px] z-30 bg-card py-2.5 px-2 text-center font-bold text-text-secondary whitespace-nowrap min-w-[65px] border-b border-r border-border shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                          Parceiros
+                        </th>
+                        {Array.from({ length: maxWeeksLicFixa + 1 }).map((_, i) => (
+                          <th
+                            key={i}
+                            className="py-2.5 px-1.5 text-center min-w-[64px] font-bold text-text-secondary whitespace-nowrap border-b border-border"
+                          >
+                            S{i}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {licencasCohortBaseFixaData.cohorts.map((cohort: any, idx: number) => {
+                        const rowBgClass = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/10';
+                        const stickyCellBg = idx % 2 === 0 ? 'bg-card' : 'bg-bg-secondary/30';
+                        return (
+                          <tr key={cohort.semanaEntrada} className={rowBgClass}>
+                            <td
+                              className={`sticky left-0 z-20 ${stickyCellBg} py-2.5 px-2 font-semibold text-text-primary whitespace-nowrap min-w-[100px] border-b border-border/40`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-text-secondary shrink-0" />
+                                <span>{cohort.label}</span>
+                              </div>
+                            </td>
+                            <td
+                              className={`sticky left-[100px] z-20 ${stickyCellBg} py-2.5 px-2 text-center font-medium text-text-primary whitespace-nowrap min-w-[65px] border-b border-r border-border/60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}
+                              title={
+                                cohort.excludedCount > 0
+                                  ? `${cohort.excludedCount} parceiro(s) da safra sem snapshot no S0 (fora da base fixa)`
+                                  : undefined
+                              }
+                            >
+                              {cohort.planCount}
+                              {cohort.excludedCount > 0 && (
+                                <span className="text-[10px] text-text-secondary">
+                                  {' '}
+                                  (−{cohort.excludedCount})
+                                </span>
+                              )}
+                            </td>
+                            {cohort.weeksData.map((w: any) => {
+                              const isNull = w.totalLicencas === null;
+                              const heat = isNull
+                                ? { style: {}, className: '' }
+                                : getCohortHeatmapStyle(w.totalLicencas, licencasBaseFixaHeatDomain);
+                              const deltaColor =
+                                w.delta === null || w.delta === 0
+                                  ? 'text-text-secondary'
+                                  : w.delta > 0
+                                  ? 'text-emerald-700'
+                                  : 'text-rose-700';
+                              return (
+                                <td
+                                  key={w.weekIndex}
+                                  style={heat.style}
+                                  className={`py-1.5 px-1.5 text-center text-xs whitespace-nowrap transition-colors border-b border-border/40 ${heat.className}`}
+                                >
+                                  {isNull ? (
+                                    '—'
+                                  ) : (
+                                    <div className="flex flex-col items-center leading-tight">
+                                      <span>{w.totalLicencas.toLocaleString('pt-BR')}</span>
+                                      <span className={`text-[10px] ${deltaColor}`}>
+                                        {w.weekIndex === 0
+                                          ? 'base'
+                                          : `${fmtSignedInt(w.delta)} (${fmtSignedPct(w.deltaPct)})`}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : licencasCohortData.status === 'loading' ? (
               <div className="p-8 text-center text-text-secondary">
                 <p className="text-sm font-medium">Carregando dados da coorte...</p>
               </div>
@@ -1573,6 +2136,15 @@ export const CampanhasAnalytics: React.FC = () => {
                 </table>
               </div>
             )}
+
+            <div className="mt-4 flex items-start gap-2 text-text-secondary text-xs">
+              <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <p>
+                O aumento de licenças não é necessariamente causado pela campanha (pode haver
+                crescimento orgânico do parceiro). A base fixa remove a distorção de composição, mas
+                não prova causalidade.
+              </p>
+            </div>
           </div>
 
           {/* Comparação convertidos vs. resto da base */}
