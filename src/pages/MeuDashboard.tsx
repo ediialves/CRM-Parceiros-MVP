@@ -91,8 +91,8 @@ export const MeuDashboard: React.FC = () => {
   const [partners, setPartners] = useState<PartnerData[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Radar de Risco: controle de qual card está expandido ('retencao' | 'sem_plano' | 'queda_engajamento' | 'tarefas_atrasadas' | 'planos_parados' | 'playbooks_travados' | null)
-  type RiskGroupType = 'retencao' | 'sem_plano' | 'queda_engajamento' | 'tarefas_atrasadas' | 'planos_parados' | 'playbooks_travados' | null;
+  // Radar de Risco: controle de qual card está expandido ('expansao' | 'sem_plano' | 'queda_engajamento' | 'tarefas_atrasadas' | 'planos_parados' | 'playbooks_travados' | null)
+  type RiskGroupType = 'expansao' | 'sem_plano' | 'queda_engajamento' | 'tarefas_atrasadas' | 'planos_parados' | 'playbooks_travados' | null;
   const [expandedRiskGroup, setExpandedRiskGroup] = useState<RiskGroupType>(null);
   const [engagementDrops, setEngagementDrops] = useState<Array<{
     id: string;
@@ -363,9 +363,9 @@ export const MeuDashboard: React.FC = () => {
     });
   }, [partners]);
 
-  // Lista de parceiros em RETENÇÃO sem plano ativo
-  const retencaoWithoutPlan = useMemo(() => {
-    return allPartnersWithoutPlan.filter(p => p.fila === 'RETENÇÃO');
+  // Lista de parceiros em EXPANSÃO sem plano ativo
+  const expansaoWithoutPlan = useMemo(() => {
+    return allPartnersWithoutPlan.filter(p => p.fila === 'EXPANSÃO');
   }, [allPartnersWithoutPlan]);
 
   // Lista de tarefas atrasadas
@@ -622,7 +622,7 @@ export const MeuDashboard: React.FC = () => {
 
   // Lista unificada de ações prioritárias ("O que fazer agora")
   // Ordem fixa de categorias:
-  // 1. Retenção sem plano
+  // 1. Expansão sem plano
   // 2. Queda de engajamento (maior queda primeiro)
   // 3. Tarefa atrasada (mais dias de atraso primeiro)
   // 4. Plano parado (mais dias parado primeiro)
@@ -630,7 +630,7 @@ export const MeuDashboard: React.FC = () => {
   const unifiedActionItems = useMemo(() => {
     const items: Array<{
       id: string;
-      category: 'retencao_sem_plano' | 'queda_engajamento' | 'tarefa_atrasada' | 'plano_parado' | 'playbook_travado';
+      category: 'expansao_sem_plano' | 'queda_engajamento' | 'tarefa_atrasada' | 'plano_parado' | 'playbook_travado';
       badgeLabel: string;
       badgeVariant: 'danger' | 'warning' | 'primary';
       badgeClasses: string;
@@ -639,12 +639,12 @@ export const MeuDashboard: React.FC = () => {
       detailText?: string;
     }> = [];
 
-    // 1. Retenção sem plano
-    for (const p of retencaoWithoutPlan) {
+    // 1. Expansão sem plano
+    for (const p of expansaoWithoutPlan) {
       items.push({
-        id: `ret_${p.id}`,
-        category: 'retencao_sem_plano',
-        badgeLabel: 'Retenção · sem plano',
+        id: `exp_${p.id}`,
+        category: 'expansao_sem_plano',
+        badgeLabel: 'Expansão · sem plano',
         badgeVariant: 'danger',
         badgeClasses: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800',
         partnerNome: p.nome,
@@ -710,7 +710,7 @@ export const MeuDashboard: React.FC = () => {
     }
 
     return items;
-  }, [retencaoWithoutPlan, engagementDrops, overdueTasks, stalledPlans45, stalledPlaybooks15]);
+  }, [expansaoWithoutPlan, engagementDrops, overdueTasks, stalledPlans45, stalledPlaybooks15]);
 
   // Seção 1: Cálculos de Resumo
   const stats = useMemo(() => {
@@ -972,12 +972,12 @@ export const MeuDashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Card 1: Retenção sem plano */}
-          <div 
-            onClick={() => setExpandedRiskGroup(expandedRiskGroup === 'retencao' ? null : 'retencao')}
+          {/* Card 1: Expansão sem plano */}
+          <div
+            onClick={() => setExpandedRiskGroup(expandedRiskGroup === 'expansao' ? null : 'expansao')}
             className={`bg-surface p-5 rounded-xl border transition-all cursor-pointer select-none shadow-sm ${
-              expandedRiskGroup === 'retencao' 
-                ? 'border-red-500 ring-2 ring-red-500/20 bg-red-50/10' 
+              expandedRiskGroup === 'expansao'
+                ? 'border-red-500 ring-2 ring-red-500/20 bg-red-50/10'
                 : 'border-border hover:border-red-300'
             }`}
           >
@@ -985,15 +985,15 @@ export const MeuDashboard: React.FC = () => {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-                    Retenção sem plano
+                    Expansão sem plano
                   </span>
                   <Badge variant="danger" size="sm">Crítico</Badge>
                 </div>
                 <div className="text-3xl font-extrabold text-text-primary">
-                  {retencaoWithoutPlan.length}
+                  {expansaoWithoutPlan.length}
                 </div>
                 <p className="text-xs text-text-secondary">
-                  Parceiros da fila RETENÇÃO que estão sem nenhum playbook ativo
+                  Parceiros da fila EXPANSÃO que estão sem nenhum playbook ativo
                 </p>
               </div>
               <div className="p-3 bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl">
@@ -1001,8 +1001,8 @@ export const MeuDashboard: React.FC = () => {
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs text-text-secondary font-medium">
-              <span>{expandedRiskGroup === 'retencao' ? 'Ocultar parceiros' : 'Ver parceiros afetados'}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRiskGroup === 'retencao' ? 'rotate-180 text-red-500' : ''}`} />
+              <span>{expandedRiskGroup === 'expansao' ? 'Ocultar parceiros' : 'Ver parceiros afetados'}</span>
+              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRiskGroup === 'expansao' ? 'rotate-180 text-red-500' : ''}`} />
             </div>
           </div>
 
@@ -1183,7 +1183,7 @@ export const MeuDashboard: React.FC = () => {
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-text-primary">
-                  {expandedRiskGroup === 'retencao' && `Parceiros em Retenção sem plano (${retencaoWithoutPlan.length})`}
+                  {expandedRiskGroup === 'expansao' && `Parceiros em Expansão sem plano (${expansaoWithoutPlan.length})`}
                   {expandedRiskGroup === 'sem_plano' && `Todos os parceiros sem plano ativo (${allPartnersWithoutPlan.length})`}
                   {expandedRiskGroup === 'queda_engajamento' && `Parceiros com queda de engajamento (${engagementDrops.length})`}
                   {expandedRiskGroup === 'tarefas_atrasadas' && `Tarefas atrasadas (${overdueTasks.length})`}
@@ -1377,14 +1377,14 @@ export const MeuDashboard: React.FC = () => {
               )
             )}
 
-            {(expandedRiskGroup === 'retencao' || expandedRiskGroup === 'sem_plano') && (
-              ((expandedRiskGroup === 'retencao' ? retencaoWithoutPlan : allPartnersWithoutPlan).length === 0) ? (
+            {(expandedRiskGroup === 'expansao' || expandedRiskGroup === 'sem_plano') && (
+              ((expandedRiskGroup === 'expansao' ? expansaoWithoutPlan : allPartnersWithoutPlan).length === 0) ? (
                 <p className="text-xs text-text-secondary py-4 text-center italic">
                   Nenhum parceiro encontrado neste grupo de risco.
                 </p>
               ) : (
                 <div className="divide-y divide-border max-h-80 overflow-y-auto pr-1">
-                  {(expandedRiskGroup === 'retencao' ? retencaoWithoutPlan : allPartnersWithoutPlan).map(p => (
+                  {(expandedRiskGroup === 'expansao' ? expansaoWithoutPlan : allPartnersWithoutPlan).map(p => (
                     <div
                       key={p.id}
                       onClick={() => navigate(`/parceiros/${p.accountancy_id}`)}
