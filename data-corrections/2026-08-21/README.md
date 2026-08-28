@@ -34,22 +34,48 @@ Reproduz **exatamente** a lógica de `parsePartners.ts` + o objeto de insert de
   snapshot, mas ela existe na tabela e marca o snapshot como importação real/completa — ver
   CLAUDE.md). Confirme que a coluna existe antes de rodar o `02`.
 
+## Pré-passo: 31 parceiros ausentes
+
+O `LEFT JOIN` do staging de snapshots com `partners` (passo 01) encontrou **31 `accountancy_id`
+presentes na planilha que ainda não existem em `partners`**. Como o INSERT de snapshots do `02`
+faz `JOIN partners`, esses 31 seriam **descartados** e o total não fecharia. Por isso o
+**`00_insert_missing_partners.sql`** cadastra esses 31 parceiros **antes** de aplicar os snapshots
+(opção B escolhida pelo usuário).
+
+- O `00` carrega os **3.983** parceiros da aba `Página7` numa staging `stg_partners_20260821` e
+  faz `INSERT ... ON CONFLICT (accountancy_id) DO NOTHING` — ou seja, **só os 31 que faltam são
+  inseridos; os parceiros já existentes ficam intactos** (nenhum `UPDATE` de `gerente_id`,
+  `licencas`, etc.).
+- Colunas gravadas: exatamente as do objeto de upsert do app (`src/pages/Importacao.tsx`), com o
+  mesmo parsing de `src/lib/import/parsePartners.ts`.
+- **`gerente_id` é inserido como `NULL`** para os 31 parceiros novos (fiel ao app: ele só preserva
+  `gerente_id` de parceiros já existentes; parceiro novo entra sem gerente). **Esses 31 parceiros
+  precisarão de vínculo de gerente depois** (linking manual). Eles **continuam contando** no
+  Histórico de Licenças/Engajamento porque o texto `gerente` (coluna C = `owner_name`) **é
+  populado** — os dashboards filtram parceiros por esse texto, não pelo `gerente_id`.
+- `last_imported_at` usa o valor histórico fixo `'2026-08-21 12:00:00-03'` (não `now()`).
+
 ## Ordem de execução
 
-1. **`01_stage_and_preview.sql`** — cria a tabela de staging `stg_snapshot_20260821`, carrega as
-   3.983 linhas e roda os SELECTs de preview (**não escreve** em `partner_snapshots`).
-2. **Confira as somas e o unmatched:**
-   - `staged` deve mostrar `soma_licencas = 57975`, `soma_engajadas = 40678`, `linhas = 3983`.
-   - o relatório de `UNMATCHED` lista os `accountancy_id` do staging que **não** têm parceiro
-     correspondente em `partners`. Esses **não** entram no apply (o INSERT usa `JOIN partners`).
-     Confira se a quantidade é aceitável.
+1. **`01_stage_and_preview.sql`** — cria a staging `stg_snapshot_20260821`, carrega as 3.983
+   linhas e roda os previews (**não escreve** em `partner_snapshots`). O relatório de `UNMATCHED`
+   deve listar **31** `accountancy_id` sem parceiro correspondente.
+   - Confira: `soma_licencas = 57975`, `soma_engajadas = 40678`, `linhas = 3983`.
+2. **`00_insert_missing_partners.sql`** — cria a staging `stg_partners_20260821`, carrega os 3.983
+   parceiros, mostra os previews (`faltando` deve ser **31** e lista quem são), abre `BEGIN`,
+   insere os 31 faltantes (`ON CONFLICT DO NOTHING`) e roda o pós-check.
+   - **Precisa rodar DEPOIS do `01`**, porque o re-check final do `00`
+     (`snapshot_unmatched_agora`) consulta `stg_snapshot_20260821`, criada no `01`.
+   - Confira: `partners_depois - partners_antes = 31` **e** `snapshot_unmatched_agora = 0`.
+   - Se estiver certo, rode `COMMIT;` (está comentado no fim, de propósito). Senão, `ROLLBACK;`.
 3. **`02_apply.sql`** — cria backup `partner_snapshots_bkp_20260821`, abre `BEGIN`, apaga os
-   snapshots de `2026-08-21`, reinsere a partir do staging (só os que casam com `partners`) e
-   roda o post-check.
-4. **Confira o post-check.** Se estiver certo, rode `COMMIT;` (está comentado no fim do arquivo,
-   de propósito, para você commitar conscientemente). Se algo estiver errado, `ROLLBACK;`.
+   snapshots de `2026-08-21`, reinsere a partir do staging (agora **todos** casam com `partners`)
+   e roda o post-check.
+4. **Confira o post-check** (esperado `soma_licencas = 57975`). Se estiver certo, rode `COMMIT;`
+   (está comentado no fim do arquivo, de propósito). Se algo estiver errado, `ROLLBACK;`.
 5. **Valide o gráfico** ("Histórico de Licenças e Engajamento") na aplicação.
-6. **`03_cleanup.sql`** — só **depois** de validar o gráfico: derruba a staging e o backup.
+6. **`03_cleanup.sql`** — só **depois** de validar o gráfico: derruba as duas stagings
+   (`stg_partners_20260821`, `stg_snapshot_20260821`) e o backup.
 
 ## Observações
 
