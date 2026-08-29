@@ -4,7 +4,7 @@ import { Partner, Plan, Task, NewMrrSale } from '../../types';
 import { Badge } from '../ui/Badge';
 import { ProgressBar } from '../ui/ProgressBar';
 import { SalesforceLinkButton } from '../ui/SalesforceLinkButton';
-import { TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 interface PartnerCardProps {
   partner: Partner;
@@ -134,7 +134,11 @@ export const PartnerCard: React.FC<PartnerCardProps> = ({ partner, activePlans, 
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <TrendingUp className="w-3.5 h-3.5 text-success" />
-                <span className="text-[10px] uppercase tracking-wider text-success font-semibold">New MRR</span>
+                <span className="text-[10px] uppercase tracking-wider text-success font-semibold">New MRR (vendas)</span>
+                <Info
+                  className="w-3 h-3 text-text-secondary shrink-0 cursor-help"
+                  title="Soma das vendas novas por licença (BigQuery). Pode divergir levemente do New MRR oficial."
+                />
               </div>
               <div className="text-right">
                 <span className="text-sm font-bold text-text-primary">{formatBRL(mrr6m.total)}</span>
