@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { PartnerList } from '../components/partners/PartnerList';
 import { supabase } from '../lib/supabase';
-import { Partner, Plan, Task } from '../types';
+import { Partner, Plan, Task, NewMrrSale } from '../types';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [newMrrSalesByPartner, setNewMrrSalesByPartner] = useState<Map<string, NewMrrSale[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,11 +94,50 @@ export const Dashboard: React.FC = () => {
         }
       };
 
-      const [partnersData, plansData, tasksData] = await Promise.all([
+      const fetchAllNewMrrSales = async () => {
+        try {
+          let allSales: any[] = [];
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data, error: fetchError } = await supabase
+              .from('partner_new_mrr_sales')
+              .select('accountancy_id, data_venda, valor_new_mrr, produto, canal')
+              .range(from, from + limit - 1);
+            if (fetchError) throw fetchError;
+            if (data && data.length > 0) {
+              allSales = [...allSales, ...data];
+              if (data.length < limit) hasMore = false;
+              else from += limit;
+            } else {
+              hasMore = false;
+            }
+          }
+          return allSales;
+        } catch (err) {
+          console.warn('Erro ao carregar vendas New MRR:', err);
+          return [];
+        }
+      };
+
+      const [partnersData, plansData, tasksData, newMrrSalesData] = await Promise.all([
         fetchAllPartners(),
         fetchAllPlans(),
-        fetchAllTasks()
+        fetchAllTasks(),
+        fetchAllNewMrrSales()
       ]);
+
+      const salesByPartner = new Map<string, NewMrrSale[]>();
+      (newMrrSalesData || []).forEach((s: any) => {
+        const key = s.accountancy_id;
+        if (!key) return;
+        if (!salesByPartner.has(key)) {
+          salesByPartner.set(key, []);
+        }
+        salesByPartner.get(key)!.push(s as NewMrrSale);
+      });
+      setNewMrrSalesByPartner(salesByPartner);
 
       const tasksByPlan = new Map<string, Task[]>();
       (tasksData || []).forEach((t: any) => {
@@ -184,9 +224,10 @@ export const Dashboard: React.FC = () => {
           <p className="text-text-secondary">Importe parceiros na tela de Importação para começar.</p>
         </div>
       ) : (
-        <PartnerList 
+        <PartnerList
           partners={partners}
           availablePlans={uniquePlans}
+          newMrrSalesByPartner={newMrrSalesByPartner}
         />
       )}
     </div>

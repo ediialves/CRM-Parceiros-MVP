@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Partner, Plan, Task } from '../../types';
+import { Partner, Plan, Task, NewMrrSale } from '../../types';
 import { SearchInput } from '../ui/SearchInput';
 import { PartnerCard } from './PartnerCard';
 import { FilterDropdown } from '../ui/FilterDropdown';
@@ -24,9 +24,10 @@ const formatDate = (dateStr: string) => {
 interface PartnerListProps {
   partners: Partner[];
   availablePlans: string[];
+  newMrrSalesByPartner?: Map<string, NewMrrSale[]>;
 }
 
-export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePlans }) => {
+export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePlans, newMrrSalesByPartner }) => {
   const { user, isAdmin } = useAuth();
   
   const [isPlanoOpen, setIsPlanoOpen] = useState(false);
@@ -630,12 +631,15 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePla
           filteredPartners.map(partner => {
             const allPlans = (partner as any).plans ?? [];
             const activePlans = allPlans.filter((p: any) => p.ativo);
-            
+            const partnerSalesKey = partner.accountancy_id ?? partner.id;
+            const partnerSales = newMrrSalesByPartner?.get(partnerSalesKey);
+
             return (
-              <PartnerCard 
+              <PartnerCard
                 key={partner.id}
                 partner={partner}
                 activePlans={activePlans}
+                newMrrSales={partnerSales}
               />
             );
           })

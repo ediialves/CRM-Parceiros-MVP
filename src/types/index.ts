@@ -65,6 +65,14 @@ export interface Task {
   created_at: string;
 }
 
+export interface NewMrrSale {
+  accountancy_id: string;
+  data_venda: string; // DATE ISO (yyyy-mm-dd)
+  valor_new_mrr: number;
+  produto: string | null;
+  canal: string | null;
+}
+
 export interface ImportLog {
   id: string;
   tipo: string;
