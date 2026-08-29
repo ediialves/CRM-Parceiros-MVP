@@ -54,11 +54,11 @@ export const PlanConclusionModal: React.FC<PlanConclusionModalProps> = ({
     onClose();
   };
 
-  const isSucessoValid = statusChoice === 'sucesso' && sucessoTexto.trim().length >= 100;
+  const isSucessoValid = statusChoice === 'sucesso' && sucessoTexto.trim().length > 0;
   const isInsucessoValid =
     statusChoice === 'sem_sucesso' &&
     motivoInsucesso !== '' &&
-    insucessoDescricao.trim().length >= 100;
+    insucessoDescricao.trim().length > 0;
 
   const canConfirm = isSucessoValid || isInsucessoValid;
 
@@ -199,10 +199,10 @@ export const PlanConclusionModal: React.FC<PlanConclusionModalProps> = ({
                 </label>
                 <span
                   className={`text-[11px] font-semibold ${
-                    sucessoTexto.trim().length >= 100 ? 'text-success' : 'text-text-secondary'
+                    sucessoTexto.trim().length > 0 ? 'text-success' : 'text-text-secondary'
                   }`}
                 >
-                  {sucessoTexto.length}/100 mínimo
+                  {sucessoTexto.trim().length > 0 ? 'Preenchido' : 'Obrigatório'}
                 </span>
               </div>
               <textarea
@@ -252,10 +252,10 @@ export const PlanConclusionModal: React.FC<PlanConclusionModalProps> = ({
                   </label>
                   <span
                     className={`text-[11px] font-semibold ${
-                      insucessoDescricao.trim().length >= 100 ? 'text-success' : 'text-text-secondary'
+                      insucessoDescricao.trim().length > 0 ? 'text-success' : 'text-text-secondary'
                     }`}
                   >
-                    {insucessoDescricao.length}/100 mínimo
+                    {insucessoDescricao.trim().length > 0 ? 'Preenchido' : 'Obrigatório'}
                   </span>
                 </div>
                 <textarea

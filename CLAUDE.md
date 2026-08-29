@@ -19,6 +19,10 @@ um bug relevante for encontrado/corrigido, ou algo planejado for implementado.
   precisa publicar de novo via AI Studio para o Cloud Run pegar as mudanças. E como o AI Studio
   também pode escrever no `main` a qualquer momento, sempre dar `git pull --rebase` antes de
   começar a trabalhar, para não perder mudanças feitas em paralelo por lá.
+- **AI Studio sincroniza especificamente a branch `main`**: mudança feita em outra branch (ex.
+  uma feature branch) **não** aparece pro AI Studio puxar/publicar — só o que está na `main` é
+  visível pra sincronização. Por decisão do dono do produto, **trabalhar/entregar sempre na
+  `main`** (ou fazer merge pra `main`) para a mudança chegar em produção.
 
 ## 1. Glossário de negócio
 
