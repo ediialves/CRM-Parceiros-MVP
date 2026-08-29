@@ -1,15 +1,17 @@
 import React from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, AlertTriangle, EyeOff } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { ImportDiagnostics } from '../../lib/import/parsePartners';
 
 interface ImportPreviewProps {
   data: any[];
   type: 'partners' | 'managers';
+  diagnostics?: ImportDiagnostics | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export const ImportPreview: React.FC<ImportPreviewProps> = ({ data, type, onConfirm, onCancel }) => {
+export const ImportPreview: React.FC<ImportPreviewProps> = ({ data, type, diagnostics, onConfirm, onCancel }) => {
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
 
   const handleCopy = (code: string, index: number) => {
@@ -20,8 +22,51 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({ data, type, onConf
 
   if (data.length === 0) return null;
 
+  const warnings = diagnostics?.warnings ?? [];
+  // Abas com o mesmo formato do parser, para o resumo por aba (rede de proteção).
+  const schemaSheets = diagnostics?.sheets.filter(s => s.schemaOk) ?? [];
+
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      {warnings.length > 0 && (
+        <div className="p-4 rounded-lg bg-warning/10 border border-warning/30 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-warning">
+            <AlertTriangle size={18} />
+            <span>Atenção antes de confirmar</span>
+          </div>
+          <ul className="list-disc list-inside space-y-1 text-sm text-text-primary">
+            {warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {schemaSheets.length > 1 && (
+        <div className="bg-surface rounded-lg border border-border p-3 text-xs">
+          <p className="font-bold text-text-secondary uppercase tracking-wider mb-2">
+            Abas com o mesmo formato encontradas
+          </p>
+          <ul className="space-y-1">
+            {schemaSheets.map(s => {
+              const isSelected = s.name === diagnostics?.selectedSheet;
+              return (
+                <li
+                  key={s.name}
+                  className={`flex items-center gap-2 ${isSelected ? 'font-bold text-primary' : 'text-text-secondary'}`}
+                >
+                  {s.hidden ? <EyeOff size={12} /> : <span className="w-3" />}
+                  <span>{s.name}</span>
+                  <span className="text-text-secondary">· {s.uniquePartners} parceiros · {s.sumLicencas} licenças</span>
+                  {isSelected && <span className="text-success">(importando)</span>}
+                  {s.hidden ? <span className="text-warning">(oculta)</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-primary">
           Preview dos Dados ({data.length} registros)

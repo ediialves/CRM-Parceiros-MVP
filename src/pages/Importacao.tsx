@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { FileUpload } from '../components/import/FileUpload';
 import { ImportPreview } from '../components/import/ImportPreview';
 import { ImportLog } from '../components/import/ImportLog';
-import { parsePartnersExcel } from '../lib/import/parsePartners';
+import { parsePartnersExcel, ImportDiagnostics } from '../lib/import/parsePartners';
 import { parseManagersExcel } from '../lib/import/parseManagers';
 import { ImportLog as ILog } from '../types';
 import { ShieldAlert, Users, Target, CheckCircle2, XCircle } from 'lucide-react';
@@ -15,6 +15,7 @@ export const Importacao: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'partners' | 'managers'>('partners');
   const [importing, setImporting] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
+  const [diagnostics, setDiagnostics] = useState<ImportDiagnostics | null>(null);
   const [logs, setLogs] = useState<ILog[]>([]);
   const [currentFileName, setCurrentFileName] = useState('');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -40,9 +41,11 @@ export const Importacao: React.FC = () => {
     setCurrentFileName(file.name);
     try {
       let data: any[] = [];
+      setDiagnostics(null);
       if (activeTab === 'partners') {
         const result = await parsePartnersExcel(file);
         data = result.data;
+        setDiagnostics(result.diagnostics);
         if (result.errors.length > 0) {
           console.warn('Avisos na importação de parceiros:', result.errors);
           alert(`Importação concluída com ${result.errors.length} avisos. Verifique o console para detalhes.`);
@@ -275,6 +278,7 @@ export const Importacao: React.FC = () => {
   const handleCancel = () => {
     setPreviewData([]);
     setCurrentFileName('');
+    setDiagnostics(null);
   };
 
   return (
@@ -323,9 +327,10 @@ export const Importacao: React.FC = () => {
               <LoadingState message="Lendo arquivo excel..." />
             </div>
           ) : previewData.length > 0 ? (
-            <ImportPreview 
-              data={previewData} 
-              type={activeTab} 
+            <ImportPreview
+              data={previewData}
+              type={activeTab}
+              diagnostics={activeTab === 'partners' ? diagnostics : null}
               onConfirm={handleConfirm}
               onCancel={handleCancel}
             />
