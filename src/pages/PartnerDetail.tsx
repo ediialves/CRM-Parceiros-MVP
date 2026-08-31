@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { Plus, Play, Loader2, AlertCircle, Trash2, X } from 'lucide-react';
-import { Task, Plan, Partner } from '../types';
+import { Task, Plan, Partner, NewMrrSale } from '../types';
 import { PartnerHeader } from '../components/partners/PartnerHeader';
 import { MetricsSection } from '../components/metrics/MetricsSection';
+import { NewMrrPanel } from '../components/partners/NewMrrPanel';
 import { PartnerHistoryChart } from '../components/partners/PartnerHistoryChart';
 import { TaskList } from '../components/tasks/TaskList';
 import { TaskModal } from '../components/tasks/TaskModal';
@@ -27,6 +28,7 @@ export const PartnerDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [localPlans, setLocalPlans] = useState<Plan[]>([]);
   const [partnerTasks, setPartnerTasks] = useState<Task[]>([]);
+  const [newMrrSales, setNewMrrSales] = useState<NewMrrSale[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [isPlaybookModalOpen, setIsPlaybookModalOpen] = useState(false);
@@ -83,6 +85,18 @@ export const PartnerDetail: React.FC = () => {
           setPartnerTasks(tasksData || []);
         } else {
           setPartnerTasks([]);
+        }
+
+        // Buscar vendas New MRR (BigQuery) - não deve bloquear/regredir o carregamento do parceiro
+        try {
+          const { data: mrrData } = await supabase
+            .from('partner_new_mrr_sales')
+            .select('accountancy_id, data_venda, valor_new_mrr, produto, canal')
+            .eq('accountancy_id', id);
+          setNewMrrSales((mrrData as NewMrrSale[]) ?? []);
+        } catch (mrrErr) {
+          console.warn('Erro ao carregar vendas New MRR:', mrrErr);
+          setNewMrrSales([]);
         }
       }
     } catch (err: any) {
@@ -323,8 +337,10 @@ export const PartnerDetail: React.FC = () => {
       <PartnerHeader partner={partner} />
       
       <MetricsSection partner={partner} />
-      
-      <PartnerHistoryChart 
+
+      <NewMrrPanel sales={newMrrSales} />
+
+      <PartnerHistoryChart
         partnerId={id} 
         partnerUuid={partnerUuid} 
         accountancyId={partner?.accountancy_id || id} 
