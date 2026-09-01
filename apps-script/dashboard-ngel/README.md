@@ -73,3 +73,26 @@ porcentagem, então o `getValues()` devolve fração (0,7455) — `getBaseNGEL_`
   Sem eixo Y duplo: os dois volumes dividem um eixo (mesma unidade, empilhados) e a
   taxa fica num painel abaixo com o eixo X e o crosshair compartilhados — mesma
   decisão já tomada no `PartnerHistoryChart` do CAPro (ver `CLAUDE.md`).
+
+## Arquivo completo pronto para deploy
+
+`src/Codigo.js` — o `Código.js` inteiro com as 4 mudanças já aplicadas (coluna N no
+`backlogData`, `baseVsEngajadaChart` dentro do `buildJS`, chamada no `buildAll`).
+
+Reconstruído a partir do fonte colado pelo autor + o `buildJS()` extraído byte a byte
+da página publicada. Verificado ponta a ponta: `test-local.js` roda o arquivo em Node
+com `SpreadsheetApp`/`Utilities`/`Logger` mockados e os dados reais da aba NGEL,
+gera o HTML e confirma que `buildAll` executa sem erro e que o card novo aparece.
+
+    node apps-script/dashboard-ngel/test-local.js
+
+**Antes de dar push, rode um `diff` contra o seu arquivo local** — a reconstrução
+depende de o fonte colado estar completo.
+
+### Armadilha encontrada na reconstrução
+
+O `buildJS()` é um template literal, então `\'` no fonte vira `'` na saída. Os dois
+`onclick="toggleComp(\\'...\\')"` precisam de barra dupla no fonte; ao extrair o JS da
+página renderizada as barras se perdem e o dashboard quebra com
+`Uncaught SyntaxError: Unexpected string`, deixando `#content` vazio. Qualquer código
+colado dentro do `buildJS` precisa dessa atenção.
