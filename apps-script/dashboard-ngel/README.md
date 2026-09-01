@@ -11,8 +11,14 @@ alterações no dashboard; o deploy continua sendo manual, pelo editor do Apps S
 ## Estrutura do dashboard (levantada a partir do output renderizado)
 
 Servidor: `doGet`, `toNum`, `getFridayWeekKey`, `padZ`, `dayLabel`, `getData`, `buildHTML`, `buildJS`.
+Dados operacionais vêm da aba `EX_NGEL_Diario` da planilha que hospeda o script
+(`getActiveSpreadsheet`); base/engajamento e planos vêm da planilha externa
+"Levantamento NGEL" via `openById`.
+
 `buildJS` gera todo o front-end (SVG escrito à mão, sem biblioteca de gráficos) e
-`buildAll(ds)` compõe as seções. Helpers disponíveis: `card`, `esc`, `uid`, `fmtN`,
+`buildAll(ds)` compõe as seções. **`buildJS` retorna um template literal (crases)** —
+todo código colado lá dentro não pode conter crase, `${` nem barra invertida sem
+escape (por isso o `toggleComp(\\'...\\')` duplicado que aparece no original). Helpers disponíveis: `card`, `esc`, `uid`, `fmtN`,
 `fmtK`, `fmtSigned`, `fmtSignedK`, `niceStep`, `statBox`, `sparkline`, e o array
 `scripts[]` (padrão de hover: `<rect id="gid_hit">` + `<line id="gid_vl">` +
 `<div class="tip" id="gid_tip">`, com o listener empurrado via `scripts.push(js)`
@@ -57,12 +63,13 @@ porcentagem, então o `getValues()` devolve fração (0,7455) — `getBaseNGEL_`
 
 ## Arquivos
 
-- `getBaseNGEL.gs` — lê a aba `NGEL` (colunas A/H/N/O) e devolve
-  `[{mes, eng, tot, pct}]`. Ligar com `BASE_NGEL: getBaseNGEL_(),` no retorno do
-  `getData`.
+- `patch-getData.md` — a mudança no `getData` para ler a coluna N em
+  `BACKLOG_CHART[].tot` (obrigatória), mais duas correções opcionais (`pct` com 2
+  casas e o pareamento de mês do `WATERFALL`).
 - `baseVsEngajadaChart.js` — gráfico "Base engajada x base total (fim de mês) +
-  taxa de engajamento MoM", consumindo `ds.BASE_NGEL`. Instruções de instalação no
-  topo do arquivo.
+  taxa de engajamento MoM", consumindo `ds.BACKLOG_CHART`. Instruções de instalação no
+  topo do arquivo. O corpo da função é livre de crase/`${`/barra invertida, então
+  entra no template literal do `buildJS` sem escape.
   Sem eixo Y duplo: os dois volumes dividem um eixo (mesma unidade, empilhados) e a
   taxa fica num painel abaixo com o eixo X e o crosshair compartilhados — mesma
   decisão já tomada no `PartnerHistoryChart` do CAPro (ver `CLAUDE.md`).

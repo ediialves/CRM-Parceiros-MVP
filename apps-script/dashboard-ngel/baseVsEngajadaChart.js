@@ -15,29 +15,28 @@
  *         '<div class="section-sub">Fim de mês · base consolidada</div></div>'+
  *         baseVsEngajadaChart(ds)+'</div>';
  *
- * DADOS: `ds.BASE_NGEL` — [{mes, eng, tot, pct}] vindo da planilha "Levantamento NGEL",
- * aba `NGEL`, colunas H (backlog_end_month), N (Subscribers) e O (% engajadas).
- * Ver `getBaseNGEL.gs` neste diretório: cole a função no projeto e acrescente
- * `BASE_NGEL: getBaseNGEL_(),` ao objeto que o `getData` retorna.
+ * DADOS: `ds.BACKLOG_CHART`, que o `getData` já monta lendo a planilha
+ * "Levantamento NGEL", aba `NGEL` — coluna H (backlog_end_month) em `val` e coluna O
+ * (% engajadas) em `pct`. Falta só a base total: aplique `patch-getData.md` neste
+ * diretório para o `getData` passar a ler a coluna N (Subscribers) em `tot`.
  *
- * Enquanto isso não estiver ligado, a função cai para `ds.BACKLOG_CHART` e deriva a
- * base total de val/(pct/100), exibindo aviso de estimativa no rodapé do card.
+ * Sem esse patch a função ainda funciona, derivando a base total de val/(pct/100) e
+ * exibindo aviso de estimativa no rodapé do card.
  *
  * Depende só de helpers que já existem: card, esc, uid, fmtN, fmtK, fmtSigned,
  * niceStep e o array `scripts` (padrão de hover do mtdChart).
  */
 function baseVsEngajadaChart(ds){
-  /* Fonte: ds.BASE_NGEL (planilha Levantamento NGEL, aba NGEL, colunas H/N/O).
-     Cai para BACKLOG_CHART, derivando a base total, só enquanto getBaseNGEL_
-     não estiver ligado no getData. */
-  var src=(ds && ds.BASE_NGEL && ds.BASE_NGEL.length) ? ds.BASE_NGEL : ((ds && ds.BACKLOG_CHART) || []);
+  /* Fonte: ds.BACKLOG_CHART — val = coluna H, tot = coluna N, pct = coluna O.
+     tot só existe depois do patch-getData.md; sem ele, deriva de val/pct. */
+  var src=(ds && ds.BACKLOG_CHART) || [];
   var derived=false;
   var rows=[];
   for(var r=0;r<src.length;r++){
     var x=src[r];
     var pct=(x.pct==null)?null:Number(x.pct);
-    var eng=Number(x.eng!=null?x.eng:x.val)||0;
-    var tot=(x.tot!=null)?Number(x.tot):((x.total!=null)?Number(x.total):null);
+    var eng=Number(x.val)||0;
+    var tot=(x.tot!=null&&Number(x.tot))?Number(x.tot):null;
     if(tot==null&&pct){ tot=eng/(pct/100); derived=true; }
     if(tot==null||pct==null||!isFinite(tot)||!eng) continue;
     rows.push({mes:String(x.mes||""),eng:eng,tot:tot,pct:pct});
