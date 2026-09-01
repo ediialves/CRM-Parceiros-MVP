@@ -15,29 +15,31 @@
  *         '<div class="section-sub">Fim de mês · base consolidada</div></div>'+
  *         baseVsEngajadaChart(ds)+'</div>';
  *
- * DADOS: usa `ds.BACKLOG_CHART` ({mes, val, pct}), que já é enviado ao browser hoje
- * e não era renderizado por nenhum gráfico.
+ * DADOS: `ds.BASE_NGEL` — [{mes, eng, tot, pct}] vindo da planilha "Levantamento NGEL",
+ * aba `NGEL`, colunas H (backlog_end_month), N (Subscribers) e O (% engajadas).
+ * Ver `getBaseNGEL.gs` neste diretório: cole a função no projeto e acrescente
+ * `BASE_NGEL: getBaseNGEL_(),` ao objeto que o `getData` retorna.
  *
- * A base total é derivada de val/(pct/100) — `pct` vem arredondado em 1 decimal,
- * o que dá erro de ~±50 licenças. Para eliminar isso, faça o `getData` incluir
- * `total` em cada item de BACKLOG_CHART; a função usa `x.total` automaticamente
- * quando o campo existe e para de exibir o aviso de estimativa.
+ * Enquanto isso não estiver ligado, a função cai para `ds.BACKLOG_CHART` e deriva a
+ * base total de val/(pct/100), exibindo aviso de estimativa no rodapé do card.
  *
  * Depende só de helpers que já existem: card, esc, uid, fmtN, fmtK, fmtSigned,
  * niceStep e o array `scripts` (padrão de hover do mtdChart).
  */
 function baseVsEngajadaChart(ds){
-  var src=(ds && ds.BACKLOG_CHART) || [];
+  /* Fonte: ds.BASE_NGEL (planilha Levantamento NGEL, aba NGEL, colunas H/N/O).
+     Cai para BACKLOG_CHART, derivando a base total, só enquanto getBaseNGEL_
+     não estiver ligado no getData. */
+  var src=(ds && ds.BASE_NGEL && ds.BASE_NGEL.length) ? ds.BASE_NGEL : ((ds && ds.BACKLOG_CHART) || []);
   var derived=false;
   var rows=[];
   for(var r=0;r<src.length;r++){
     var x=src[r];
     var pct=(x.pct==null)?null:Number(x.pct);
-    var eng=Number(x.val)||0;
-    var tot=null;
-    if(x.total!=null){ tot=Number(x.total); }
-    else if(pct){ tot=eng/(pct/100); derived=true; }
-    if(tot==null||pct==null||!isFinite(tot)) continue;
+    var eng=Number(x.eng!=null?x.eng:x.val)||0;
+    var tot=(x.tot!=null)?Number(x.tot):((x.total!=null)?Number(x.total):null);
+    if(tot==null&&pct){ tot=eng/(pct/100); derived=true; }
+    if(tot==null||pct==null||!isFinite(tot)||!eng) continue;
     rows.push({mes:String(x.mes||""),eng:eng,tot:tot,pct:pct});
   }
   if(rows.length<2){
@@ -118,8 +120,9 @@ function baseVsEngajadaChart(ds){
 
   /* ---------- eixo X compartilhado ---------- */
   var xStep=Math.max(1,Math.round(n/6));
+  var minGap=48; /* largura do rótulo final (~22u) + meia largura do tick (~11u) + folga; evita o último rótulo colidir com o penúltimo tick */
   rows.forEach(function(d,i){
-    if(i%xStep!==0 && i!==last) return;
+    if(i!==last && (i%xStep!==0 || (xAt(last)-xAt(i))<minGap)) return;
     s+='<text x="'+xAt(i).toFixed(1)+'" y="'+(H-4)+'" text-anchor="'+(i===0?"start":i===last?"end":"middle")+'" font-size="8" fill="var(--muted)">'+esc(d.mes)+'</text>';
   });
 
@@ -159,7 +162,7 @@ function baseVsEngajadaChart(ds){
       '<div>Base total: <b>'+Math.round(d.tot).toLocaleString("pt-BR")+'</b></div>'+
       '<div>Base engajada: <b>'+Math.round(d.eng).toLocaleString("pt-BR")+'</b></div>'+
       '<div>Não engajadas: <b>'+Math.round(d.tot-d.eng).toLocaleString("pt-BR")+'</b></div>'+
-      '<div>Taxa: <b>'+fmtPct(d.pct)+'</b></div>';
+      '<div>Taxa: <b>'+d.pct.toFixed(2).replace(".",",")+'%</b></div>';
   });
 
   scripts.push("(function(){"+
