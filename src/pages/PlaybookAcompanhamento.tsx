@@ -6,6 +6,7 @@ import { User, Filter, AlertCircle, Loader2, ArrowRight, ChevronDown, Bookmark, 
 import { SalesforceLinkButton } from '../components/ui/SalesforceLinkButton';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
+import { CohortConclusao, CONCLUSAO_OPTIONS, planPassesConclusao } from '../lib/cohorts/conclusao';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -37,6 +38,36 @@ const formatCohortWeekLabel = (dateStr: string) => {
   const parts = dateStr.split('-');
   return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
 };
+
+const CohortConclusaoFilter: React.FC<{
+  value: CohortConclusao;
+  onChange: (v: CohortConclusao) => void;
+  idPrefix: string;
+}> = ({ value, onChange, idPrefix }) => (
+  <div className="flex items-center gap-2" id={`filtro-conclusao-${idPrefix}`}>
+    <span className="text-xs font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
+      Conclusão:
+    </span>
+    <div className="inline-flex p-1 bg-bg-secondary/50 border border-border rounded-xl shadow-2xs">
+      {CONCLUSAO_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          title={opt.title}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+            value === opt.value
+              ? 'bg-primary text-white shadow-xs'
+              : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+          id={`btn-${idPrefix}-conclusao-${opt.value}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
 
 const getCohortHeatmapStyle = (val: number | null): { style: React.CSSProperties; className: string } => {
   if (val === null || val === undefined || isNaN(val)) {
@@ -296,6 +327,8 @@ export const PlaybookAcompanhamento: React.FC = () => {
   // Cohort states
   const [cohortEngEtapa, setCohortEngEtapa] = useState<'criado' | 'iniciado' | 'finalizado'>('criado');
   const [cohortLicEtapa, setCohortLicEtapa] = useState<'criado' | 'iniciado' | 'finalizado'>('criado');
+  const [cohortEngConclusao, setCohortEngConclusao] = useState<CohortConclusao>('todos');
+  const [cohortLicConclusao, setCohortLicConclusao] = useState<CohortConclusao>('todos');
   const [cohortRawPlans, setCohortRawPlans] = useState<any[]>([]);
   const [cohortRawSnapshots, setCohortRawSnapshots] = useState<any[]>([]);
   const [cohortTasksByPlan, setCohortTasksByPlan] = useState<Map<string, any[]>>(new Map());
@@ -930,6 +963,8 @@ export const PlaybookAcompanhamento: React.FC = () => {
         if (!(p.ativo === false || todasTasksConcluidas)) return;
       }
 
+      if (!planPassesConclusao(p, cohortEngConclusao, todasTasksConcluidas)) return;
+
       const entryDate = typeof p.created_at === 'string' ? p.created_at.split('T')[0] : String(p.created_at).substring(0, 10);
       const semanaEntrada = getMondayOfWeek(entryDate);
       if (!semanaEntrada || semanaEntrada < DATA_CORTE_SNAPSHOTS) return;
@@ -1039,7 +1074,7 @@ export const PlaybookAcompanhamento: React.FC = () => {
       summary4Weeks: calculateColumnBasedAverages(4),
       summary12Weeks: calculateColumnBasedAverages(12)
     };
-  }, [cohortRawPlans, cohortRawSnapshots, cohortTasksByPlan, cohortEngEtapa]);
+  }, [cohortRawPlans, cohortRawSnapshots, cohortTasksByPlan, cohortEngEtapa, cohortEngConclusao]);
 
   // Cohort Licenças calculation
   const cohortLicencasData = useMemo(() => {
@@ -1090,6 +1125,8 @@ export const PlaybookAcompanhamento: React.FC = () => {
       } else if (cohortLicEtapa === 'finalizado') {
         if (!(p.ativo === false || todasTasksConcluidas)) return;
       }
+
+      if (!planPassesConclusao(p, cohortLicConclusao, todasTasksConcluidas)) return;
 
       const entryDate = typeof p.created_at === 'string' ? p.created_at.split('T')[0] : String(p.created_at).substring(0, 10);
       const semanaEntrada = getMondayOfWeek(entryDate);
@@ -1203,7 +1240,7 @@ export const PlaybookAcompanhamento: React.FC = () => {
       summary4Weeks: calculateColumnBasedAverages(4),
       summary12Weeks: calculateColumnBasedAverages(12)
     };
-  }, [cohortRawPlans, cohortRawSnapshots, cohortTasksByPlan, cohortLicEtapa]);
+  }, [cohortRawPlans, cohortRawSnapshots, cohortTasksByPlan, cohortLicEtapa, cohortLicConclusao]);
 
   // Fetch Kanban Data
   const fetchKanbanData = async () => {
@@ -2652,49 +2689,57 @@ export const PlaybookAcompanhamento: React.FC = () => {
               </p>
             </div>
 
-            {/* Filtro local Etapa do Plano */}
-            <div className="flex items-center gap-2" id="filtro-etapa-coorte-engajamento">
-              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
-                Etapa:
-              </span>
-              <div className="inline-flex p-1 bg-bg-secondary/50 border border-border rounded-xl shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setCohortEngEtapa('criado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortEngEtapa === 'criado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-eng-etapa-criado"
-                >
-                  Criado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCohortEngEtapa('iniciado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortEngEtapa === 'iniciado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-eng-etapa-iniciado"
-                >
-                  Em Andamento
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCohortEngEtapa('finalizado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortEngEtapa === 'finalizado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-eng-etapa-finalizado"
-                >
-                  Concluído
-                </button>
+            {/* Filtros locais: Etapa do Plano e Status de Conclusão */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-start sm:justify-end">
+              <div className="flex items-center gap-2" id="filtro-etapa-coorte-engajamento">
+                <span className="text-xs font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
+                  Etapa:
+                </span>
+                <div className="inline-flex p-1 bg-bg-secondary/50 border border-border rounded-xl shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setCohortEngEtapa('criado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortEngEtapa === 'criado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-eng-etapa-criado"
+                  >
+                    Criado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCohortEngEtapa('iniciado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortEngEtapa === 'iniciado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-eng-etapa-iniciado"
+                  >
+                    Em Andamento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCohortEngEtapa('finalizado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortEngEtapa === 'finalizado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-eng-etapa-finalizado"
+                  >
+                    Concluído
+                  </button>
+                </div>
               </div>
+
+              <CohortConclusaoFilter
+                value={cohortEngConclusao}
+                onChange={setCohortEngConclusao}
+                idPrefix="cohort-eng"
+              />
             </div>
           </div>
 
@@ -2846,49 +2891,57 @@ export const PlaybookAcompanhamento: React.FC = () => {
               </p>
             </div>
 
-            {/* Filtro local Etapa do Plano */}
-            <div className="flex items-center gap-2" id="filtro-etapa-coorte-licencas">
-              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
-                Etapa:
-              </span>
-              <div className="inline-flex p-1 bg-bg-secondary/50 border border-border rounded-xl shadow-2xs">
-                <button
-                  type="button"
-                  onClick={() => setCohortLicEtapa('criado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortLicEtapa === 'criado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-lic-etapa-criado"
-                >
-                  Criado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCohortLicEtapa('iniciado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortLicEtapa === 'iniciado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-lic-etapa-iniciado"
-                >
-                  Em Andamento
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCohortLicEtapa('finalizado')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    cohortLicEtapa === 'finalizado'
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  id="btn-cohort-lic-etapa-finalizado"
-                >
-                  Concluído
-                </button>
+            {/* Filtros locais: Etapa do Plano e Status de Conclusão */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-start sm:justify-end">
+              <div className="flex items-center gap-2" id="filtro-etapa-coorte-licencas">
+                <span className="text-xs font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap">
+                  Etapa:
+                </span>
+                <div className="inline-flex p-1 bg-bg-secondary/50 border border-border rounded-xl shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setCohortLicEtapa('criado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortLicEtapa === 'criado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-lic-etapa-criado"
+                  >
+                    Criado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCohortLicEtapa('iniciado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortLicEtapa === 'iniciado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-lic-etapa-iniciado"
+                  >
+                    Em Andamento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCohortLicEtapa('finalizado')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      cohortLicEtapa === 'finalizado'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    id="btn-cohort-lic-etapa-finalizado"
+                  >
+                    Concluído
+                  </button>
+                </div>
               </div>
+
+              <CohortConclusaoFilter
+                value={cohortLicConclusao}
+                onChange={setCohortLicConclusao}
+                idPrefix="cohort-lic"
+              />
             </div>
           </div>
 

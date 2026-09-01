@@ -1,4 +1,5 @@
 import { formatCohortWeekLabel, HeatDomain } from './heatmap';
+import { CohortConclusao, planPassesConclusao } from './conclusao';
 
 /**
  * Cálculo das tabelas de coorte (safra = segunda-feira da semana de `plans.created_at`).
@@ -21,7 +22,7 @@ export interface CohortFilters {
   selectedPlaybookIds: string[];
   selectedFila: 'todos' | 'RETENÇÃO' | 'EXPANSÃO';
   statusEtapaPlano: 'criado' | 'iniciado' | 'finalizado';
-  statusConclusao: 'todos' | 'sucesso' | 'sem_sucesso' | 'nao_classificado';
+  statusConclusao: CohortConclusao;
 }
 
 export const emptyCohortFilters = (): CohortFilters => ({
@@ -281,14 +282,7 @@ const buildPlanEntries = (
     }
 
     // Status de conclusão
-    if (filters.statusConclusao === 'sucesso') {
-      if (p.status_conclusao !== 'sucesso') return;
-    } else if (filters.statusConclusao === 'sem_sucesso') {
-      if (p.status_conclusao !== 'sem_sucesso') return;
-    } else if (filters.statusConclusao === 'nao_classificado') {
-      const hasNoClassification = !p.status_conclusao || p.status_conclusao === '';
-      if (!(todasTasksConcluidas && hasNoClassification)) return;
-    }
+    if (!planPassesConclusao(p, filters.statusConclusao, todasTasksConcluidas)) return;
 
     // A data de entrada é SEMPRE plans.created_at
     if (!p.created_at) return;
