@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, FileUp, LayoutDashboard, X, BookOpen, FileText, Calendar, Megaphone, BarChart2, TrendingUp } from 'lucide-react';
+import { Users, FileUp, LayoutDashboard, LayoutGrid, X, BookOpen, FileText, Calendar, Megaphone, BarChart2, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -23,6 +23,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     ...(isAdmin ? [
       { label: 'Dashboard gerencial', icon: LayoutDashboard, path: '/dashboard-gerencial' },
       { label: 'Dashboard gerencial V2', icon: LayoutDashboard, path: '/dashboard-gerencial-v2' },
+      { label: 'Dashboard de Coortes', icon: LayoutGrid, path: '/dashboard-coortes' },
       { label: 'Analytics de Playbooks', icon: BarChart2, path: '/playbooks-analytics' },
       { label: 'Analytics de Campanhas', icon: TrendingUp, path: '/campanhas-analytics' },
       { label: 'Forecast semanal', icon: Calendar, path: '/account-planning' },

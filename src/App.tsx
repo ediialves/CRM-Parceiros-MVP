@@ -9,6 +9,7 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 import { Dashboard } from './pages/Dashboard';
 import { DashboardGerencial } from './pages/DashboardGerencial';
 import { DashboardGerencialV2 } from './pages/DashboardGerencialV2';
+import { DashboardCoortes } from './pages/DashboardCoortes';
 import { PerformanceGerentes } from './pages/PerformanceGerentes';
 import { PlaybooksAutomaticos } from './pages/PlaybooksAutomaticos';
 import { PlaybookAcompanhamento } from './pages/PlaybookAcompanhamento';
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="dashboard-gerencial" element={<ProtectedRoute adminOnly><DashboardGerencial /></ProtectedRoute>} />
         <Route path="dashboard-gerencial-v2" element={<ProtectedRoute adminOnly><DashboardGerencialV2 /></ProtectedRoute>} />
+        <Route path="dashboard-coortes" element={<ProtectedRoute adminOnly><DashboardCoortes /></ProtectedRoute>} />
         <Route path="performance-gerentes" element={<ProtectedRoute><PerformanceGerentes /></ProtectedRoute>} />
         <Route path="playbooks-automaticos" element={<ProtectedRoute><PlaybooksAutomaticos /></ProtectedRoute>} />
         <Route path="playbooks-automaticos/:id" element={<ProtectedRoute><PlaybookAcompanhamento /></ProtectedRoute>} />
