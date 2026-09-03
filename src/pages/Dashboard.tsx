@@ -3,13 +3,18 @@ import { useAuth } from '../context/AuthContext';
 import { PartnerList } from '../components/partners/PartnerList';
 import { supabase } from '../lib/supabase';
 import { fetchAllPaginated } from '../lib/supabaseFetch';
+import { buscarComCache, invalidarCache, temCacheValido } from '../lib/dataCache';
 import { Partner, Plan, Task } from '../types';
 import { AlertCircle, Loader2 } from 'lucide-react';
+
+/** Chave do cache desta tela. Invalidada quando um plano e criado. */
+const CACHE_KEY = 'dashboard:parceiros';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [partners, setPartners] = useState<Partner[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Se ja existe cache valido, nao mostra o spinner: a volta para a tela e instantanea.
+  const [loading, setLoading] = useState(() => !temCacheValido(CACHE_KEY));
   const [error, setError] = useState<string | null>(null);
 
   const fetchPartners = async (showLoading = true) => {
@@ -50,11 +55,10 @@ export const Dashboard: React.FC = () => {
         }
       };
 
-      const [partnersData, plansData, tasksData] = await Promise.all([
-        fetchAllPartners(),
-        fetchAllPlans(),
-        fetchAllTasks()
-      ]);
+      const [partnersData, plansData, tasksData] = await buscarComCache(
+        CACHE_KEY,
+        () => Promise.all([fetchAllPartners(), fetchAllPlans(), fetchAllTasks()])
+      );
 
       const tasksByPlan = new Map<string, Task[]>();
       (tasksData || []).forEach((t: any) => {
@@ -98,6 +102,9 @@ export const Dashboard: React.FC = () => {
     fetchPartners(true);
 
     const handlePlanCreated = () => {
+      // O dado mudou: descarta o cache antes de rebuscar, senao a tela
+      // continuaria mostrando a versao anterior ate o TTL expirar.
+      invalidarCache(CACHE_KEY);
       fetchPartners(false);
     };
 

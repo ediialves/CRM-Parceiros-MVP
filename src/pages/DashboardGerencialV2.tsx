@@ -3,6 +3,7 @@ import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchAllPaginated } from '../lib/supabaseFetch';
+import { buscarComCache, temCacheValido } from '../lib/dataCache';
 import { getMondayOfWeek } from '../lib/cohorts/computeCohorts';
 import { formatCohortWeekLabel } from '../lib/cohorts/heatmap';
 import { Layout, Users, FileText, CheckCircle2, AlertTriangle, Loader2, ChevronDown, Filter, Bookmark, Trash2, Plus, TrendingUp } from 'lucide-react';
@@ -137,10 +138,12 @@ const getUltimasSemanas = (n: number): string[] => {
   return semanas.reverse();
 };
 
+const CACHE_KEY = 'gerencial-v2:base';
+
 export const DashboardGerencialV2: React.FC = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
-  
-  const [loadingData, setLoadingData] = useState(true);
+
+  const [loadingData, setLoadingData] = useState(() => !temCacheValido(CACHE_KEY));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [managerStats, setManagerStats] = useState<ManagerStat[]>([]);
   const [segmentStats, setSegmentStats] = useState<SegmentStat[]>([]);
@@ -478,15 +481,16 @@ export const DashboardGerencialV2: React.FC = () => {
           }
         };
 
-        const [partners, basePlans, tasks, snapshots, playbooksData, partnerSnapshots, funnelPartnerSnapshots] = await Promise.all([
-          wrapFetch('fetchAllPartners', fetchAllPartners),
-          wrapFetch('fetchAllBasePlans', fetchAllBasePlans),
-          wrapFetch('fetchAllTasks', fetchAllTasks),
-          wrapFetch('fetchSnapshots', fetchSnapshots),
-          wrapFetch('fetchPlaybooks', fetchPlaybooks),
-          wrapFetch('fetchPartnerSnapshots', fetchPartnerSnapshots),
-          wrapFetch('fetchFunnelPartnerSnapshots', fetchFunnelPartnerSnapshots)
-        ]);
+        const [partners, basePlans, tasks, snapshots, playbooksData, partnerSnapshots, funnelPartnerSnapshots] =
+          await buscarComCache(CACHE_KEY, () => Promise.all([
+            wrapFetch('fetchAllPartners', fetchAllPartners),
+            wrapFetch('fetchAllBasePlans', fetchAllBasePlans),
+            wrapFetch('fetchAllTasks', fetchAllTasks),
+            wrapFetch('fetchSnapshots', fetchSnapshots),
+            wrapFetch('fetchPlaybooks', fetchPlaybooks),
+            wrapFetch('fetchPartnerSnapshots', fetchPartnerSnapshots),
+            wrapFetch('fetchFunnelPartnerSnapshots', fetchFunnelPartnerSnapshots)
+          ]));
 
         if (!isMounted) return;
 

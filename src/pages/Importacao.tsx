@@ -9,6 +9,7 @@ import { ImportLog as ILog } from '../types';
 import { ShieldAlert, Users, Target, CheckCircle2, XCircle } from 'lucide-react';
 import { LoadingState } from '../components/ui/LoadingState';
 import { supabase } from '../lib/supabase';
+import { invalidarCache } from '../lib/dataCache';
 
 export const Importacao: React.FC = () => {
   const { user, isAdmin } = useAuth();
@@ -172,6 +173,10 @@ export const Importacao: React.FC = () => {
 
           if (snapshotError) throw snapshotError;
         }
+
+        // A importacao reescreve partners e insere snapshots: todo dashboard que
+        // esta em cache ficou desatualizado neste instante.
+        invalidarCache();
 
         // Registrar log de sucesso
         await supabase.from('import_logs').insert({

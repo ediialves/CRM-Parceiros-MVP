@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchAllPaginated } from '../lib/supabaseFetch';
+import { buscarComCache } from '../lib/dataCache';
 import {
   Users,
   Search,
@@ -264,12 +265,16 @@ export const PerformanceGerentes: React.FC = () => {
           }
         };
 
-        const [partners, partnerSnapshots, basePlans, tasks] = await Promise.all([
-          fetchAllPartners(),
-          fetchPartnerSnapshots(),
-          fetchAllBasePlans(),
-          fetchAllTasks()
-        ]);
+        const [partners, partnerSnapshots, basePlans, tasks] = await buscarComCache(
+          // A chave inclui o recorte: admin ve a base toda, gerente so a carteira dele.
+          `performance-gerentes:${isAdmin ? 'admin' : user.id}`,
+          () => Promise.all([
+            fetchAllPartners(),
+            fetchPartnerSnapshots(),
+            fetchAllBasePlans(),
+            fetchAllTasks()
+          ])
+        );
 
         if (!isMounted) return;
 

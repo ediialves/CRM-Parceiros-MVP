@@ -4,6 +4,7 @@ import { LayoutGrid, Loader2, AlertTriangle, Columns2, Rows3 } from 'lucide-reac
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchAllPaginated } from '../lib/supabaseFetch';
+import { buscarComCache, temCacheValido } from '../lib/dataCache';
 import { CohortFilterBar, PlaybookOption } from '../components/cohorts/CohortFilterBar';
 import { CohortTables } from '../components/cohorts/CohortTables';
 import {
@@ -26,10 +27,12 @@ import {
  * o filtro de playbooks oficiais/automáticos específicos.
  */
 
+const CACHE_KEY = 'coortes:base';
+
 export const DashboardCoortes: React.FC = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
 
-  const [loadingData, setLoadingData] = useState(true);
+  const [loadingData, setLoadingData] = useState(() => !temCacheValido(CACHE_KEY));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [rawData, setRawData] = useState<CohortRawData | null>(null);
   const [playbooksList, setPlaybooksList] = useState<PlaybookOption[]>([]);
@@ -63,7 +66,9 @@ export const DashboardCoortes: React.FC = () => {
           .filter((u: any) => u.role === 'gerente')
           .sort((a: any, b: any) => (a.nome || '').localeCompare(b.nome || ''));
 
-        const [partners, basePlans, tasks, partnerSnapshots, playbooks] = await Promise.all([
+        const [partners, basePlans, tasks, partnerSnapshots, playbooks] = await buscarComCache(
+          CACHE_KEY,
+          () => Promise.all([
           fetchAllPaginated('partners', 'id, gerente_id, gerente, segmento, fila', (q) => q.order('id', { ascending: true })),
           fetchAllPaginated('plans', 'id, ativo, status_conclusao, partner_id, created_at, playbook_id', (q) => q.order('id', { ascending: true })),
           fetchAllPaginated('tasks', 'id, status, deletada_em, plan_id', (q) => q.is('deletada_em', null).order('id', { ascending: true })),
@@ -72,7 +77,7 @@ export const DashboardCoortes: React.FC = () => {
             if (error) throw error;
             return data || [];
           }),
-        ]);
+        ]));
 
         if (!isMounted) return;
 

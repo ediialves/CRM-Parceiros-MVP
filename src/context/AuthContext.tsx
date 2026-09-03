@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { invalidarCache } from '../lib/dataCache';
 
 interface User {
   id: string;
@@ -143,6 +144,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('DEBUG [AuthContext]: Auth State Change:', event, session?.user?.id);
       if (event === 'SIGNED_OUT' || !session) {
         console.log('DEBUG [AuthContext]: No session, clearing user');
+        // Sem isto, o proximo usuario a logar nesta aba veria o dado cacheado do anterior.
+        invalidarCache();
         loadedAuthIdRef.current = null;
         setUser(null);
         setLoading(false);
@@ -164,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error during signOut:', err);
     } finally {
       cleanSupabaseLocalStorage();
+      invalidarCache();
       loadedAuthIdRef.current = null;
       setUser(null);
     }

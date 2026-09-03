@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { invalidarCache } from '../../lib/dataCache';
 import { Playbook } from '../../types';
 import { X, Loader2, CheckCircle } from 'lucide-react';
 
@@ -130,6 +131,10 @@ export const AddPlaybookModal: React.FC<AddPlaybookModalProps> = ({
 
       setSuccessMsg('Playbook aplicado com sucesso!');
       
+      // Aplicar playbook cria planos: derruba o cache de todos os dashboards, nao
+      // so o da tela que ouve o evento abaixo.
+      invalidarCache();
+
       // Despacha o evento global para atualizar o dashboard e outros ouvintes
       window.dispatchEvent(new CustomEvent('plan-created'));
       

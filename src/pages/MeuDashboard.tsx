@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchAllByIds } from '../lib/supabaseFetch';
+import { buscarComCache, temCacheValido } from '../lib/dataCache';
 import { 
   Users, 
   Target, 
@@ -117,10 +118,14 @@ export const MeuDashboard: React.FC = () => {
 
     const fetchData = async () => {
       try {
-        setLoading(true);
+        setLoading(!temCacheValido(`meu-dashboard:${user.id}`));
         setError(null);
 
-        const { data: partnersRawData, error: partnersError } = await supabase
+        // So a query de parceiros entra no cache: ela e o embed aninhado caro, e as
+        // duas buscas seguintes derivam dos ids que ela devolve.
+        const { data: partnersRawData, error: partnersError } = await buscarComCache(
+          `meu-dashboard:${user.id}`,
+          async () => await supabase
           .from('partners')
           .select(`
             id,
@@ -159,7 +164,8 @@ export const MeuDashboard: React.FC = () => {
           // ~4.4k parceiros da base inteira, dependendo so do RLS para cortar, e
           // encostava no teto de 5000 linhas do PostgREST: na proxima importacao
           // ela passaria a truncar em silencio.
-          .eq('gerente_id', user.id);
+          .eq('gerente_id', user.id)
+        );
 
         if (partnersError) throw partnersError;
 
