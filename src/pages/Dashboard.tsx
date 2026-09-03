@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { PartnerList } from '../components/partners/PartnerList';
 import { supabase } from '../lib/supabase';
+import { fetchAllPaginated } from '../lib/supabaseFetch';
 import { Partner, Plan, Task } from '../types';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
@@ -16,49 +17,20 @@ export const Dashboard: React.FC = () => {
       if (showLoading) setLoading(true);
 
       const fetchAllPartners = async () => {
-        let allPartners: any[] = [];
-        let from = 0;
-        const limit = 1000;
-        let hasMore = true;
-        while (hasMore) {
-          const { data, error: fetchError } = await supabase
-            .from('partners')
-            .select('id, accountancy_id, salesforce_id, nome, gerente, nivel, perfil_parceiro, perfil_servico, fila, licencas, licencas_engajadas, estoque, percentual_engajamento, gerente_id, cnpjs, cnpjs_livres, contas_potencial, ratio, segmento, atribuidas, percentual_atribuidas')
-            .order('nome')
-            .range(from, from + limit - 1);
-          if (fetchError) throw fetchError;
-          if (data && data.length > 0) {
-            allPartners = [...allPartners, ...data];
-            if (data.length < limit) hasMore = false;
-            else from += limit;
-          } else {
-            hasMore = false;
-          }
-        }
-        return allPartners;
+        return await fetchAllPaginated(
+          'partners',
+          'id, accountancy_id, salesforce_id, nome, gerente, nivel, perfil_parceiro, perfil_servico, fila, licencas, licencas_engajadas, estoque, percentual_engajamento, gerente_id, cnpjs, cnpjs_livres, contas_potencial, ratio, segmento, atribuidas, percentual_atribuidas',
+          q => q.order('nome')
+        );
       };
 
       const fetchAllPlans = async () => {
         try {
-          let allPlans: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error: fetchError } = await supabase
-              .from('plans')
-              .select('id, partner_id, titulo, ativo, created_at, playbook_id')
-              .range(from, from + limit - 1);
-            if (fetchError) throw fetchError;
-            if (data && data.length > 0) {
-              allPlans = [...allPlans, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allPlans;
+          return await fetchAllPaginated(
+            'plans',
+            'id, partner_id, titulo, ativo, created_at, playbook_id',
+            q => q.order('id', { ascending: true })
+          );
         } catch (err) {
           console.warn('Erro ao carregar planos:', err);
           return [];
@@ -67,26 +39,11 @@ export const Dashboard: React.FC = () => {
 
       const fetchAllTasks = async () => {
         try {
-          let allTasks: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error: fetchError } = await supabase
-              .from('tasks')
-              .select('id, plan_id, status')
-              .is('deletada_em', null)
-              .range(from, from + limit - 1);
-            if (fetchError) throw fetchError;
-            if (data && data.length > 0) {
-              allTasks = [...allTasks, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allTasks;
+          return await fetchAllPaginated(
+            'tasks',
+            'id, plan_id, status',
+            q => q.is('deletada_em', null).order('id', { ascending: true })
+          );
         } catch (err) {
           console.warn('Erro ao carregar tarefas:', err);
           return [];

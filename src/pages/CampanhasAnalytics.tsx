@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllPaginated } from '../lib/supabaseFetch';
 import {
   TrendingUp,
   Filter,
@@ -396,30 +397,14 @@ export const CampanhasAnalytics: React.FC = () => {
 
         // Vínculos parceiro<->campanha (paginado, lotes de 1000 como o V2)
         const fetchCampaignPartners = async (): Promise<NormalizedCampaignPartner[]> => {
-          let all: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('campaign_partners')
-              .select(
-                `id, campaign_id, partner_id, status, licencas_convertidas, gerente_id,
-                 entrou_nao_abordado_em, entrou_abordado_em, entrou_reuniao_marcada_em,
-                 entrou_proposta_apresentada_em, entrou_converteu_em, entrou_perdeu_em,
-                 partners ( id, gerente, segmento, fila )`
-              )
-              .order('id', { ascending: true })
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              all = [...all, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
+          const all = await fetchAllPaginated(
+            'campaign_partners',
+            `id, campaign_id, partner_id, status, licencas_convertidas, gerente_id,
+             entrou_nao_abordado_em, entrou_abordado_em, entrou_reuniao_marcada_em,
+             entrou_proposta_apresentada_em, entrou_converteu_em, entrou_perdeu_em,
+             partners ( id, gerente, segmento, fila )`,
+            q => q.order('id', { ascending: true })
+          );
           return all.map((cp: any) => {
             const partner = Array.isArray(cp.partners) ? cp.partners[0] : cp.partners;
             return {
@@ -438,26 +423,11 @@ export const CampanhasAnalytics: React.FC = () => {
 
         // Base completa de parceiros (para identificar o "resto da base")
         const fetchAllPartners = async (): Promise<any[]> => {
-          let all: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('partners')
-              .select('id, gerente, segmento, fila')
-              .order('id', { ascending: true })
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              all = [...all, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return all;
+          return await fetchAllPaginated(
+            'partners',
+            'id, gerente, segmento, fila',
+            q => q.order('id', { ascending: true })
+          );
         };
 
         const [campaigns, campaignPartners, partners] = await Promise.all([

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllByIds } from '../lib/supabaseFetch';
 import { 
   Users, 
   Target, 
@@ -152,7 +153,13 @@ export const MeuDashboard: React.FC = () => {
                 deletada_em
               )
             )
-          `);
+          `)
+          // "Meu Dashboard" e a carteira DO gerente logado - a tela so aparece no
+          // menu para nao-admin (ver Sidebar). Sem este filtro a query trazia os
+          // ~4.4k parceiros da base inteira, dependendo so do RLS para cortar, e
+          // encostava no teto de 5000 linhas do PostgREST: na proxima importacao
+          // ela passaria a truncar em silencio.
+          .eq('gerente_id', user.id);
 
         if (partnersError) throw partnersError;
 
@@ -176,12 +183,14 @@ export const MeuDashboard: React.FC = () => {
         const taskHistMap = new Map<string, number>();
         if (activePlanTaskIds.length > 0) {
           try {
-            const { data: histData, error: histErr } = await supabase
-              .from('task_status_history')
-              .select('task_id, alterado_em')
-              .in('task_id', activePlanTaskIds);
+            const histData = await fetchAllByIds(
+              'task_status_history',
+              'task_id, alterado_em',
+              'task_id',
+              activePlanTaskIds
+            );
 
-            if (!histErr && histData) {
+            if (histData) {
               for (const h of histData) {
                 if (!h.task_id || !h.alterado_em) continue;
                 const ts = new Date(h.alterado_em).getTime();
@@ -201,13 +210,15 @@ export const MeuDashboard: React.FC = () => {
         const partnerIds = partnersData.map(p => p.id);
         if (partnerIds.length > 0) {
           try {
-            const { data: snaps, error: snapsErr } = await supabase
-              .from('partner_snapshots')
-              .select('partner_id, percentual_engajamento, imported_at, import_completo')
-              .in('partner_id', partnerIds)
-              .order('imported_at', { ascending: false });
+            const snaps = await fetchAllByIds(
+              'partner_snapshots',
+              'partner_id, percentual_engajamento, imported_at, import_completo',
+              'partner_id',
+              partnerIds,
+              q => q.order('imported_at', { ascending: false })
+            );
 
-            if (!snapsErr && snaps) {
+            if (snaps) {
               // Agrupar por partner_id -> imported_at::date pegando o mais recente do dia
               const partnerDaysMap = new Map<string, Map<string, { percentual_engajamento: number; imported_at: string }>>();
 

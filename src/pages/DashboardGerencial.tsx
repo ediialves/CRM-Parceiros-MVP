@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllPaginated } from '../lib/supabaseFetch';
 import { 
   BarChart3, 
   Users, 
@@ -180,76 +181,30 @@ export const DashboardGerencial: React.FC = () => {
 
         // Fetch paginated partners
         const fetchAllPartners = async () => {
-          let allPartners: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('partners')
-              .select('id, gerente, gerente_id, segmento, contas_potencial, fila')
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allPartners = [...allPartners, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allPartners;
+          return await fetchAllPaginated(
+            'partners',
+            'id, gerente, gerente_id, segmento, contas_potencial, fila',
+            q => q.order('id', { ascending: true })
+          );
         };
 
         // Fetch paginated plans
         const fetchAllPlans = async () => {
-          let allPlans: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('plans')
-              .select('id, created_at, contexto, ativo, partner_id, partners(accountancy_id, nome, gerente, gerente_id, segmento, contas_potencial)')
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allPlans = [...allPlans, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allPlans;
+          return await fetchAllPaginated(
+            'plans',
+            'id, created_at, contexto, ativo, partner_id, partners(accountancy_id, nome, gerente, gerente_id, segmento, contas_potencial)',
+            q => q.order('id', { ascending: true })
+          );
         };
 
         // Fetch paginated tasks
         const fetchAllTasks = async () => {
           try {
-            let allTasks: any[] = [];
-            let from = 0;
-            const limit = 1000;
-            let hasMore = true;
-            while (hasMore) {
-              const { data, error } = await supabase
-                .from('tasks')
-                .select('id, status, created_at, data_conclusao_prevista, data_conclusao_original, deletada_em, plan_id, plans(partner_id, partners(gerente, gerente_id, segmento))')
-                .order('id', { ascending: true })
-                .range(from, from + limit - 1);
-              if (error) {
-                console.warn('Aviso ao buscar lote de tasks:', error);
-                break;
-              }
-              if (data && data.length > 0) {
-                allTasks = [...allTasks, ...data];
-                if (data.length < limit) hasMore = false;
-                else from += limit;
-              } else {
-                hasMore = false;
-              }
-            }
-            return allTasks;
+            return await fetchAllPaginated(
+              'tasks',
+              'id, status, created_at, data_conclusao_prevista, data_conclusao_original, deletada_em, plan_id, plans(partner_id, partners(gerente, gerente_id, segmento))',
+              q => q.order('id', { ascending: true })
+            );
           } catch (err) {
             console.warn('Falha ao buscar tasks:', err);
             return [];
@@ -258,49 +213,22 @@ export const DashboardGerencial: React.FC = () => {
 
         // Fetch paginated logs
         const fetchAllLogs = async () => {
-          let allLogs: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('access_logs')
-              .select('user_id, accessed_at')
-              .gte('accessed_at', startOf14Days.toISOString())
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allLogs = [...allLogs, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allLogs;
+          return await fetchAllPaginated(
+            'access_logs',
+            'user_id, accessed_at',
+            // Ordena por colunas que estao no proprio select: nao da para assumir que
+            // toda tabela tem 'id', e um ORDER BY invalido derruba a query inteira.
+            q => q.gte('accessed_at', startOf14Days.toISOString()).order('accessed_at', { ascending: true }).order('user_id', { ascending: true })
+          );
         };
 
         // Fetch paginated account_planning
         const fetchAllAccountPlannings = async () => {
-          let allPlannings: any[] = [];
-          let from = 0;
-          const limit = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('account_planning')
-              .select('semana, tipo_plano, meta, resultado, status, gerente_id')
-              .range(from, from + limit - 1);
-            if (error) throw error;
-            if (data && data.length > 0) {
-              allPlannings = [...allPlannings, ...data];
-              if (data.length < limit) hasMore = false;
-              else from += limit;
-            } else {
-              hasMore = false;
-            }
-          }
-          return allPlannings;
+          return await fetchAllPaginated(
+            'account_planning',
+            'semana, tipo_plano, meta, resultado, status, gerente_id',
+            q => q.order('semana', { ascending: true }).order('gerente_id', { ascending: true })
+          );
         };
 
         const [tasks, plans, partners, logs, plannings] = await Promise.all([

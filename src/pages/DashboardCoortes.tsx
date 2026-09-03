@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { LayoutGrid, Loader2, AlertTriangle, Columns2, Rows3 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllPaginated } from '../lib/supabaseFetch';
 import { CohortFilterBar, PlaybookOption } from '../components/cohorts/CohortFilterBar';
 import { CohortTables } from '../components/cohorts/CohortTables';
 import {
@@ -24,30 +25,6 @@ import {
  * plano" — a coorte é sempre construída a partir de planos. Em compensação existe
  * o filtro de playbooks oficiais/automáticos específicos.
  */
-
-/** Busca paginada em lotes de 1000 (limite `pgrst.db_max_rows` do PostgREST). */
-const fetchAllPaginated = async (
-  table: string,
-  columns: string,
-  applyExtra?: (q: any) => any
-): Promise<any[]> => {
-  const all: any[] = [];
-  const limit = 1000;
-  let from = 0;
-
-  while (true) {
-    let query = supabase.from(table).select(columns).range(from, from + limit - 1);
-    if (applyExtra) query = applyExtra(query);
-    const { data, error } = await query;
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < limit) break;
-    from += limit;
-  }
-
-  return all;
-};
 
 export const DashboardCoortes: React.FC = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
@@ -90,7 +67,7 @@ export const DashboardCoortes: React.FC = () => {
           fetchAllPaginated('partners', 'id, gerente_id, gerente, segmento, fila', (q) => q.order('id', { ascending: true })),
           fetchAllPaginated('plans', 'id, ativo, status_conclusao, partner_id, created_at, playbook_id', (q) => q.order('id', { ascending: true })),
           fetchAllPaginated('tasks', 'id, status, deletada_em, plan_id', (q) => q.is('deletada_em', null).order('id', { ascending: true })),
-          fetchAllPaginated('partner_snapshots', 'partner_id, imported_at, licencas, licencas_engajadas, plano'),
+          fetchAllPaginated('partner_snapshots', 'partner_id, imported_at, licencas, licencas_engajadas, plano', (q) => q.order('partner_id', { ascending: true })),
           supabase.from('playbooks').select('id, nome').order('nome', { ascending: true }).then(({ data, error }) => {
             if (error) throw error;
             return data || [];
