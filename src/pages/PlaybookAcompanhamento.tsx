@@ -380,7 +380,7 @@ export const PlaybookAcompanhamento: React.FC = () => {
     if (user) {
       fetchSavedFilters();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const handleSaveFilter = async (e: React.FormEvent) => {
     e.preventDefault();

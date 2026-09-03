@@ -525,7 +525,7 @@ export const CampanhasAnalytics: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, isAdmin]);
+  }, [user?.id, isAdmin]);
 
   // -------------------------------------------------------------------------
   // Opções dos filtros

@@ -62,7 +62,7 @@ export const PlaybooksAutomaticos: React.FC = () => {
     if (user) {
       fetchData();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Protected route logic (authenticated users only)
   if (authLoading) return null;

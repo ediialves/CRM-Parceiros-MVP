@@ -249,7 +249,7 @@ export const DashboardGerencialV2: React.FC = () => {
     if (user && isAdmin) {
       fetchSavedFilters();
     }
-  }, [user, isAdmin]);
+  }, [user?.id, isAdmin]);
 
   const handleSaveFilter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -703,7 +703,7 @@ export const DashboardGerencialV2: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, isAdmin]);
+  }, [user?.id, isAdmin]);
 
   // Reactive calculations when rawData or filters change
   useEffect(() => {

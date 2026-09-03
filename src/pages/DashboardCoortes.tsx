@@ -114,7 +114,7 @@ export const DashboardCoortes: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, isAdmin]);
+  }, [user?.id, isAdmin]);
 
   const availablePlanos = useMemo(() => {
     if (!rawData) return [];

@@ -21,8 +21,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const hasLoggedAccess = useRef(false);
+  // auth_id do perfil que ja esta carregado, para nao rebuscar o mesmo usuario.
+  const loadedAuthIdRef = useRef<string | null>(null);
 
-  const fetchUserProfile = async (userId: string) => {
+  /**
+   * Rebusca o perfil so quando o usuario logado muda de fato.
+   *
+   * `getSession()` e `onAuthStateChange` disparam os dois no boot, e o Supabase ainda
+   * emite TOKEN_REFRESHED sozinho (~1x/hora e ao voltar para a aba). Como cada
+   * `setUser` criava um objeto novo, as paginas com `useEffect(..., [user])` refaziam
+   * todo o fetch de dados a cada um desses eventos - a tela recarregava sozinha.
+   */
+  const fetchUserProfile = async (userId: string, force = false) => {
+    if (!force && loadedAuthIdRef.current === userId) {
+      setLoading(false);
+      return;
+    }
+    loadedAuthIdRef.current = userId;
     console.log('DEBUG [AuthContext]: Fetching profile for', userId);
     try {
       const { data, error } = await supabase
@@ -53,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err) {
       console.error('Error fetching user profile:', err);
+      loadedAuthIdRef.current = null; // libera para nova tentativa
       setUser(null);
     } finally {
       setLoading(false);
@@ -127,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('DEBUG [AuthContext]: Auth State Change:', event, session?.user?.id);
       if (event === 'SIGNED_OUT' || !session) {
         console.log('DEBUG [AuthContext]: No session, clearing user');
+        loadedAuthIdRef.current = null;
         setUser(null);
         setLoading(false);
       } else if (session) {
@@ -147,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error during signOut:', err);
     } finally {
       cleanSupabaseLocalStorage();
+      loadedAuthIdRef.current = null;
       setUser(null);
     }
   };

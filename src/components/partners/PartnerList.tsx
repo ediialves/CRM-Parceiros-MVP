@@ -6,6 +6,17 @@ import { PartnerCard } from './PartnerCard';
 import { FilterDropdown } from '../ui/FilterDropdown';
 import { FilterChip } from '../ui/FilterChip';
 
+/**
+ * Quantos cards a lista monta por vez.
+ *
+ * A base tem ~4.000 parceiros e cada PartnerCard rende ~50 nos de DOM: renderizar
+ * todos de uma vez colocava ~200 mil nos na pagina e travava a aba por dezenas de
+ * segundos na abertura do /dashboard. O corte e apenas de EXIBICAO - o botao
+ * "Mostrar mais" revela o resto, e a busca/filtro continuam rodando sobre a lista
+ * inteira (nao e o corte de "primeiros N registros" descrito na secao 4 do CLAUDE.md).
+ */
+const PAGE_SIZE = 60;
+
 const getMonday = (dateStr: string) => {
   if (!dateStr) return '';
   const date = new Date(dateStr);
@@ -243,6 +254,19 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePla
 
   const totalFiltered = filteredPartners.length;
   const totalPartners = partners.length;
+
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Qualquer mudanca de recorte volta para a primeira "pagina".
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, filters]);
+
+  const visiblePartners = useMemo(
+    () => filteredPartners.slice(0, visibleCount),
+    [filteredPartners, visibleCount]
+  );
+  const hasMore = visibleCount < totalFiltered;
 
   return (
     <div className="space-y-6">
@@ -613,21 +637,18 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePla
       {/* Linha 3: Contador de Resultados */}
       <div className="flex items-center text-xs text-text-secondary">
         <span>
-          {totalFiltered < totalPartners ? (
-            <>
-              Mostrando <span className="font-medium text-text-primary">{totalFiltered}</span> de <span className="font-medium text-text-primary">{totalPartners}</span> parceiros
-            </>
-          ) : (
-            <>
-              <span className="font-medium text-text-primary">{totalPartners}</span> parceiros
-            </>
+          Mostrando <span className="font-medium text-text-primary">{visiblePartners.length}</span> de{' '}
+          <span className="font-medium text-text-primary">{totalFiltered}</span>
+          {totalFiltered < totalPartners && (
+            <> parceiros filtrados (<span className="font-medium text-text-primary">{totalPartners}</span> no total)</>
           )}
+          {totalFiltered >= totalPartners && <> parceiros</>}
         </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredPartners.length > 0 ? (
-          filteredPartners.map(partner => {
+        {visiblePartners.length > 0 ? (
+          visiblePartners.map(partner => {
             const allPlans = (partner as any).plans ?? [];
             const activePlans = allPlans.filter((p: any) => p.ativo);
 
@@ -645,6 +666,22 @@ export const PartnerList: React.FC<PartnerListProps> = ({ partners, availablePla
           </div>
         )}
       </div>
+
+      {hasMore && (
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+            className="rounded-lg border border-border bg-surface px-5 py-2.5 text-sm font-medium text-text-primary shadow-sm transition-colors hover:bg-bg-secondary/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            Mostrar mais {Math.min(PAGE_SIZE, totalFiltered - visibleCount)} parceiros
+          </button>
+          <span className="text-xs text-text-secondary">
+            {totalFiltered - visibleCount} restantes - use a busca ou os filtros para chegar
+            direto em quem voce procura.
+          </span>
+        </div>
+      )}
     </div>
   );
 };

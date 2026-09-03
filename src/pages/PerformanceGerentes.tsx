@@ -366,7 +366,7 @@ export const PerformanceGerentes: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, isAdmin]);
+  }, [user?.id, isAdmin]);
 
   // Available Filter Options for Admin
   const availablePlanos = useMemo(() => {

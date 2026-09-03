@@ -353,7 +353,7 @@ export const MeuDashboard: React.FC = () => {
     };
 
     fetchData();
-  }, [user]);
+  }, [user?.id]);
 
   // Lista de parceiros sem plano ativo
   const allPartnersWithoutPlan = useMemo(() => {

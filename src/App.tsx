@@ -3,30 +3,42 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { DashboardLayout } from './components/layout/DashboardLayout';
-import { Dashboard } from './pages/Dashboard';
-import { DashboardGerencial } from './pages/DashboardGerencial';
-import { DashboardGerencialV2 } from './pages/DashboardGerencialV2';
-import { DashboardCoortes } from './pages/DashboardCoortes';
-import { PerformanceGerentes } from './pages/PerformanceGerentes';
-import { PlaybooksAutomaticos } from './pages/PlaybooksAutomaticos';
-import { PlaybookAcompanhamento } from './pages/PlaybookAcompanhamento';
-import { MeuDashboard } from './pages/MeuDashboard';
-import { AccountPlanningPage } from './pages/AccountPlanning';
-import { Importacao } from './pages/Importacao';
-import { PartnerDetail } from './pages/PartnerDetail';
-import { Campanhas } from './pages/Campanhas';
-import { CampanhaKanban } from './pages/CampanhaKanban';
-import Playbook from './pages/Playbook';
-import { PlaybooksAnalytics } from './pages/PlaybooksAnalytics';
-import { CampanhasAnalytics } from './pages/CampanhasAnalytics';
-import GuiaCRM from './pages/GuiaCRM';
 import { Login } from './pages/Login';
-import { Cadastro } from './pages/Cadastro';
-import { RedefinirSenha } from './pages/RedefinirSenha';
 import { useAuth } from './context/AuthContext';
+
+/**
+ * Cada pagina vira um chunk proprio, carregado so quando a rota e aberta.
+ * Antes as 20 paginas eram importadas estaticamente e viravam um bundle unico de
+ * ~1,9 MB baixado antes de qualquer pixel aparecer.
+ */
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const DashboardGerencial = lazy(() => import('./pages/DashboardGerencial').then(m => ({ default: m.DashboardGerencial })));
+const DashboardGerencialV2 = lazy(() => import('./pages/DashboardGerencialV2').then(m => ({ default: m.DashboardGerencialV2 })));
+const DashboardCoortes = lazy(() => import('./pages/DashboardCoortes').then(m => ({ default: m.DashboardCoortes })));
+const PerformanceGerentes = lazy(() => import('./pages/PerformanceGerentes').then(m => ({ default: m.PerformanceGerentes })));
+const PlaybooksAutomaticos = lazy(() => import('./pages/PlaybooksAutomaticos').then(m => ({ default: m.PlaybooksAutomaticos })));
+const PlaybookAcompanhamento = lazy(() => import('./pages/PlaybookAcompanhamento').then(m => ({ default: m.PlaybookAcompanhamento })));
+const MeuDashboard = lazy(() => import('./pages/MeuDashboard').then(m => ({ default: m.MeuDashboard })));
+const AccountPlanningPage = lazy(() => import('./pages/AccountPlanning').then(m => ({ default: m.AccountPlanningPage })));
+const Importacao = lazy(() => import('./pages/Importacao').then(m => ({ default: m.Importacao })));
+const PartnerDetail = lazy(() => import('./pages/PartnerDetail').then(m => ({ default: m.PartnerDetail })));
+const Campanhas = lazy(() => import('./pages/Campanhas').then(m => ({ default: m.Campanhas })));
+const CampanhaKanban = lazy(() => import('./pages/CampanhaKanban').then(m => ({ default: m.CampanhaKanban })));
+const PlaybooksAnalytics = lazy(() => import('./pages/PlaybooksAnalytics').then(m => ({ default: m.PlaybooksAnalytics })));
+const CampanhasAnalytics = lazy(() => import('./pages/CampanhasAnalytics').then(m => ({ default: m.CampanhasAnalytics })));
+const Cadastro = lazy(() => import('./pages/Cadastro').then(m => ({ default: m.Cadastro })));
+const RedefinirSenha = lazy(() => import('./pages/RedefinirSenha').then(m => ({ default: m.RedefinirSenha })));
+const Playbook = lazy(() => import('./pages/Playbook'));
+const GuiaCRM = lazy(() => import('./pages/GuiaCRM'));
+
+const RouteFallback: React.FC = () => (
+  <div className="min-h-screen bg-background flex items-center justify-center">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+  </div>
+);
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode, adminOnly?: boolean }> = ({ children, adminOnly }) => {
   const { user, loading, isAdmin } = useAuth();
@@ -53,7 +65,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode, adminOnly?: boolean 
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/cadastro" element={<Cadastro />} />
       <Route path="/redefinir-senha" element={<RedefinirSenha />} />
@@ -84,6 +97,7 @@ export default function App() {
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
