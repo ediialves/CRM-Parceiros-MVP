@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { getMondayOfWeek } from '../lib/cohorts/computeCohorts';
+import { formatCohortWeekLabel } from '../lib/cohorts/heatmap';
 import { Layout, Users, FileText, CheckCircle2, AlertTriangle, Loader2, ChevronDown, Filter, Bookmark, Trash2, Plus, TrendingUp } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -76,7 +78,27 @@ interface TasksStatusStat {
 const BAU_TIPO_ID = '__bau__';
 const BAU_TIPO_LABEL = 'Manual (BAU)';
 
-// Paleta usada para diferenciar os tipos de plano empilhados.
+// Janela fixa do relatório semanal de planos criados.
+const SEMANAS_HISTORICO_PLANOS = 20;
+
+// Filas exibidas no relatório. "Sem fila" só aparece quando houver planos sem fila.
+const FILA_RETENCAO = 'RETENÇÃO';
+const FILA_EXPANSAO = 'EXPANSÃO';
+const FILA_SEM = 'Sem fila';
+
+const FILA_CORES: Record<string, string> = {
+  [FILA_RETENCAO]: '#4f46e5', // indigo-600
+  [FILA_EXPANSAO]: '#059669', // emerald-600
+  [FILA_SEM]: '#94a3b8'       // slate-400
+};
+
+const FILA_LABELS: Record<string, string> = {
+  [FILA_RETENCAO]: 'Retenção',
+  [FILA_EXPANSAO]: 'Expansão',
+  [FILA_SEM]: 'Sem fila'
+};
+
+// Paleta usada quando as colunas são empilhadas por tipo de plano.
 const TIPO_PLANO_CORES = [
   '#4f46e5', // indigo-600
   '#059669', // emerald-600
@@ -93,9 +115,25 @@ const TIPO_PLANO_CORES = [
 
 const normalizeFila = (fila: any): string => {
   const raw = (fila || '').toString().trim().toUpperCase();
-  if (raw.startsWith('RETEN')) return 'RETENÇÃO';
-  if (raw.startsWith('EXPANS')) return 'EXPANSÃO';
-  return 'Sem fila';
+  if (raw.startsWith('RETEN')) return FILA_RETENCAO;
+  if (raw.startsWith('EXPANS')) return FILA_EXPANSAO;
+  return FILA_SEM;
+};
+
+// Últimas N segundas-feiras (mais antiga primeiro), terminando na semana corrente.
+const getUltimasSemanas = (n: number): string[] => {
+  const hoje = new Date();
+  const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const semanaAtual = getMondayOfWeek(hojeStr);
+  if (!semanaAtual) return [];
+
+  const semanas: string[] = [];
+  const cursor = new Date(semanaAtual + 'T00:00:00Z');
+  for (let i = 0; i < n; i++) {
+    semanas.push(cursor.toISOString().split('T')[0]);
+    cursor.setUTCDate(cursor.getUTCDate() - 7);
+  }
+  return semanas.reverse();
 };
 
 export const DashboardGerencialV2: React.FC = () => {
@@ -181,11 +219,13 @@ export const DashboardGerencialV2: React.FC = () => {
   const [stepTasks, setStepTasks] = useState<{ id: string; titulo: string; ordem: number }[]>([]);
   const [stepHistory, setStepHistory] = useState<any[]>([]);
 
-  // Filtros próprios do card "Planos Criados por Fila" (independentes da barra de filtros global)
-  // Guarda os "tipos de plano" EXCLUÍDOS do gráfico: cada item é um playbook.id ou BAU_TIPO_ID.
+  // Filtros próprios do relatório "Planos Criados por Fila" (independentes da barra de filtros global)
+  // Guarda os "tipos de plano" EXCLUÍDOS da análise: cada item é um playbook.id ou BAU_TIPO_ID.
   const [excludedTiposPlano, setExcludedTiposPlano] = useState<string[]>([]);
   const [tipoPlanoDropdownOpen, setTipoPlanoDropdownOpen] = useState(false);
   const [tipoPlanoSearch, setTipoPlanoSearch] = useState('');
+  // Dimensão do empilhamento das colunas semanais.
+  const [empilharPor, setEmpilharPor] = useState<'fila' | 'tipo'>('fila');
 
   const fetchSavedFilters = async () => {
     try {
@@ -3267,20 +3307,30 @@ export const DashboardGerencialV2: React.FC = () => {
   ];
 
   // ==========================================================================
-  // Card: Planos Criados por Fila (Retenção x Expansão) — filtros próprios
-  // Conta TODOS os planos já criados (ativos ou não), agrupados pela fila do
-  // parceiro e empilhados pelo tipo de plano (playbook de origem ou manual/BAU).
-  // O único filtro é a exclusão de tipos de plano — a barra de filtros global
-  // não afeta este card, por decisão de produto.
+  // Relatório: Planos Criados por Fila — últimas 20 semanas
+  // Conta os planos criados (ativos ou não) por semana de `plans.created_at`,
+  // usando o mesmo critério de semana das coortes (segunda-feira da semana).
+  // Cada coluna é uma semana; o empilhado separa por fila do parceiro
+  // (Retenção / Expansão) ou por tipo de plano, conforme o seletor do card.
+  // Filtro próprio: exclusão de um ou mais playbooks da análise. A barra de
+  // filtros global do dashboard não afeta este relatório.
   // ==========================================================================
   const tiposPlanoDisponiveis = useMemo(() => {
     if (!rawData) return [] as { id: string; nome: string; total: number }[];
 
+    const semanas = getUltimasSemanas(SEMANAS_HISTORICO_PLANOS);
+    const semanaInicial = semanas[0];
+
     const playbookNomeById = new Map<string, string>();
     playbooksList.forEach((pb) => playbookNomeById.set(pb.id, pb.nome));
 
+    // O contador ao lado de cada opção reflete a mesma janela do gráfico.
     const totais = new Map<string, { id: string; nome: string; total: number }>();
     rawData.basePlans.forEach((plan: any) => {
+      if (!plan.created_at) return;
+      const semana = getMondayOfWeek(plan.created_at.substring(0, 10));
+      if (!semana || (semanaInicial && semana < semanaInicial)) return;
+
       const id = plan.playbook_id || BAU_TIPO_ID;
       const nome =
         id === BAU_TIPO_ID
@@ -3301,9 +3351,21 @@ export const DashboardGerencialV2: React.FC = () => {
   }, [tiposPlanoDisponiveis, tipoPlanoSearch]);
 
   const planosPorFilaData = useMemo(() => {
-    if (!rawData) {
-      return { chartData: null, filas: [] as string[], totaisPorFila: {} as Record<string, number>, totalGeral: 0 };
-    }
+    const vazio = {
+      chartData: null as any,
+      semanas: [] as string[],
+      linhas: [] as { semana: string; label: string; porFila: Record<string, number>; total: number }[],
+      filas: [] as string[],
+      totaisPorFila: {} as Record<string, number>,
+      totalGeral: 0
+    };
+    if (!rawData) return vazio;
+
+    const semanas = getUltimasSemanas(SEMANAS_HISTORICO_PLANOS);
+    if (semanas.length === 0) return vazio;
+    const semanaInicial = semanas[0];
+    const indexPorSemana = new Map<string, number>();
+    semanas.forEach((sem, idx) => indexPorSemana.set(sem, idx));
 
     const filaByPartnerId = new Map<string, string>();
     rawData.partners.forEach((p: any) => filaByPartnerId.set(p.id, normalizeFila(p.fila)));
@@ -3311,56 +3373,97 @@ export const DashboardGerencialV2: React.FC = () => {
     const nomeById = new Map<string, string>();
     tiposPlanoDisponiveis.forEach((t) => nomeById.set(t.id, t.nome));
 
-    // contagem[tipoId][fila] = quantidade de planos criados
-    const contagem = new Map<string, Record<string, number>>();
-    const totaisPorFila: Record<string, number> = { 'RETENÇÃO': 0, 'EXPANSÃO': 0, 'Sem fila': 0 };
+    // porFila[fila][indiceDaSemana] e porTipo[tipoId][indiceDaSemana]
+    const porFila = new Map<string, number[]>();
+    const porTipo = new Map<string, number[]>();
+    const totaisPorFila: Record<string, number> = {
+      [FILA_RETENCAO]: 0,
+      [FILA_EXPANSAO]: 0,
+      [FILA_SEM]: 0
+    };
     let totalGeral = 0;
 
     rawData.basePlans.forEach((plan: any) => {
       const tipoId = plan.playbook_id || BAU_TIPO_ID;
       if (excludedTiposPlano.includes(tipoId)) return;
+      if (!plan.created_at) return;
 
-      const fila = filaByPartnerId.get(plan.partner_id) || 'Sem fila';
+      const semana = getMondayOfWeek(plan.created_at.substring(0, 10));
+      if (!semana || semana < semanaInicial) return;
+      const idx = indexPorSemana.get(semana);
+      if (idx === undefined) return; // plano criado depois da semana corrente
 
-      const linha = contagem.get(tipoId) || {};
-      linha[fila] = (linha[fila] || 0) + 1;
-      contagem.set(tipoId, linha);
+      const fila = filaByPartnerId.get(plan.partner_id) || FILA_SEM;
+
+      const serieFila = porFila.get(fila) || new Array(semanas.length).fill(0);
+      serieFila[idx] += 1;
+      porFila.set(fila, serieFila);
+
+      const serieTipo = porTipo.get(tipoId) || new Array(semanas.length).fill(0);
+      serieTipo[idx] += 1;
+      porTipo.set(tipoId, serieTipo);
 
       totaisPorFila[fila] = (totaisPorFila[fila] || 0) + 1;
       totalGeral += 1;
     });
 
     // Retenção e Expansão sempre aparecem; "Sem fila" só quando existir.
-    const filas = ['RETENÇÃO', 'EXPANSÃO'];
-    if ((totaisPorFila['Sem fila'] || 0) > 0) filas.push('Sem fila');
+    const filas = [FILA_RETENCAO, FILA_EXPANSAO];
+    if ((totaisPorFila[FILA_SEM] || 0) > 0) filas.push(FILA_SEM);
 
-    // Datasets ordenados por volume (maior embaixo) para a pilha ficar legível.
-    const tiposOrdenados = Array.from(contagem.entries())
-      .map(([id, linha]) => ({
-        id,
-        nome: nomeById.get(id) || id,
-        total: filas.reduce((acc, f) => acc + (linha[f] || 0), 0),
-        linha
-      }))
-      .sort((a, b) => b.total - a.total);
+    const labels = semanas.map((sem) => formatCohortWeekLabel(sem));
 
-    const datasets = tiposOrdenados.map((tipo, idx) => ({
-      label: tipo.nome,
-      data: filas.map((f) => tipo.linha[f] || 0),
-      backgroundColor: TIPO_PLANO_CORES[idx % TIPO_PLANO_CORES.length],
-      borderRadius: 4,
-      borderSkipped: false as const,
-      barPercentage: 0.6,
-      categoryPercentage: 0.7
-    }));
+    const datasets =
+      empilharPor === 'fila'
+        ? filas.map((fila) => ({
+            label: FILA_LABELS[fila] || fila,
+            data: porFila.get(fila) || new Array(semanas.length).fill(0),
+            backgroundColor: FILA_CORES[fila] || '#94a3b8',
+            borderRadius: 3,
+            borderSkipped: false as const,
+            barPercentage: 0.85,
+            categoryPercentage: 0.85
+          }))
+        : Array.from(porTipo.entries())
+            // Maior volume embaixo, para a pilha ficar legível.
+            .map(([id, serie]) => ({
+              id,
+              nome: nomeById.get(id) || id,
+              serie,
+              total: serie.reduce((a, b) => a + b, 0)
+            }))
+            .sort((a, b) => b.total - a.total)
+            .map((tipo, idx) => ({
+              label: tipo.nome,
+              data: tipo.serie,
+              backgroundColor: TIPO_PLANO_CORES[idx % TIPO_PLANO_CORES.length],
+              borderRadius: 3,
+              borderSkipped: false as const,
+              barPercentage: 0.85,
+              categoryPercentage: 0.85
+            }));
 
-    const chartData = {
-      labels: filas.map((f) => (f === 'RETENÇÃO' ? 'Retenção' : f === 'EXPANSÃO' ? 'Expansão' : 'Sem fila')),
-      datasets
+    // Tabela do relatório: uma linha por semana, sempre por fila.
+    const linhas = semanas.map((semana, idx) => {
+      const porFilaNaSemana: Record<string, number> = {};
+      let total = 0;
+      filas.forEach((fila) => {
+        const qtd = (porFila.get(fila) || [])[idx] || 0;
+        porFilaNaSemana[fila] = qtd;
+        total += qtd;
+      });
+      return { semana, label: formatCohortWeekLabel(semana), porFila: porFilaNaSemana, total };
+    });
+
+    return {
+      chartData: { labels, datasets },
+      semanas,
+      linhas,
+      filas,
+      totaisPorFila,
+      totalGeral
     };
-
-    return { chartData, filas, totaisPorFila, totalGeral };
-  }, [rawData, tiposPlanoDisponiveis, excludedTiposPlano]);
+  }, [rawData, tiposPlanoDisponiveis, excludedTiposPlano, empilharPor]);
 
   const planosPorFilaOptions = useMemo(() => ({
     responsive: true,
@@ -3376,6 +3479,8 @@ export const DashboardGerencialV2: React.FC = () => {
         }
       },
       tooltip: {
+        mode: 'index' as const,
+        intersect: false,
         backgroundColor: '#0f172a',
         titleColor: '#f8fafc',
         bodyColor: '#f1f5f9',
@@ -3384,15 +3489,15 @@ export const DashboardGerencialV2: React.FC = () => {
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
         callbacks: {
+          title: (items: any[]) => (items.length ? `Semana de ${items[0].label}` : ''),
           label: (ctx: any) => {
             const valor = ctx.parsed.y || 0;
             if (valor === 0) return '';
-            const totalColuna = ctx.chart.data.datasets.reduce(
-              (acc: number, ds: any) => acc + (ds.data[ctx.dataIndex] || 0),
-              0
-            );
-            const perc = totalColuna > 0 ? ((valor / totalColuna) * 100).toFixed(1) : '0.0';
-            return `${ctx.dataset.label}: ${valor} plano${valor === 1 ? '' : 's'} (${perc}%)`;
+            return `${ctx.dataset.label}: ${valor} plano${valor === 1 ? '' : 's'}`;
+          },
+          footer: (items: any[]) => {
+            const total = items.reduce((acc: number, it: any) => acc + (it.parsed.y || 0), 0);
+            return `Total: ${total} plano${total === 1 ? '' : 's'}`;
           }
         }
       }
@@ -3403,7 +3508,9 @@ export const DashboardGerencialV2: React.FC = () => {
         grid: { display: false },
         ticks: {
           color: '#94a3b8',
-          font: { size: 12, family: 'Inter, sans-serif', weight: 'bold' as const }
+          font: { size: 10, family: 'Inter, sans-serif' },
+          maxRotation: 0,
+          autoSkip: false
         }
       },
       y: {
@@ -3455,12 +3562,12 @@ export const DashboardGerencialV2: React.FC = () => {
           const total = totals[index] || 0;
           if (total === 0) return;
 
-          ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.font = 'bold 10px Inter, sans-serif';
           ctx.fillStyle = '#4f46e5';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'bottom';
 
-          const y = topY[index] !== undefined ? topY[index] - 6 : bar.y - 6;
+          const y = topY[index] !== undefined ? topY[index] - 5 : bar.y - 5;
           ctx.fillText(total.toString(), bar.x, y);
         });
 
@@ -4823,104 +4930,142 @@ export const DashboardGerencialV2: React.FC = () => {
       {/* Linha Divisória */}
       <div className="border-t border-border border-opacity-40 my-10" id="divider-planos-por-fila" />
 
-      {/* Seção: Planos Criados por Fila (Retenção x Expansão) — filtros próprios */}
+      {/* Relatório: Planos Criados por Fila — últimas 20 semanas (filtros próprios) */}
       <div className="flex flex-col gap-6 mb-6" id="section-planos-por-fila">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4" id="header-planos-por-fila">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4" id="header-planos-por-fila">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-text-primary" id="title-planos-por-fila">
-              Planos Criados por Fila (Retenção x Expansão)
+              Planos Criados por Fila — Últimas 20 Semanas
             </h2>
             <p className="text-sm text-text-secondary mt-1" id="desc-planos-por-fila">
-              Total de planos já criados em parceiros de cada fila, empilhado pelo tipo de plano
-              (playbook de origem ou manual/BAU). Este card tem filtro próprio e <strong>não</strong> é
+              Quantidade de planos criados por semana em parceiros de cada fila (Retenção / Expansão),
+              pela semana de criação do plano. Este relatório tem filtro próprio e <strong>não</strong> é
               afetado pela barra de filtros do topo.
             </p>
           </div>
 
-          {/* Filtro próprio: exclusão de tipos de plano / playbooks */}
-          <div className="w-full sm:w-80 shrink-0 flex flex-col gap-2" id="bloco-filtro-tipo-plano">
-            <span className="text-xs font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
-              <Filter className="h-3.5 w-3.5" />
-              Excluir playbooks
-            </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setTipoPlanoDropdownOpen(!tipoPlanoDropdownOpen)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm text-text-primary shadow-sm hover:bg-bg-secondary/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                id="btn-dropdown-tipo-plano"
-              >
-                <span className="truncate">
-                  {excludedTiposPlano.length === 0
-                    ? 'Nenhum excluído'
-                    : excludedTiposPlano.length === 1
-                    ? `1 tipo excluído`
-                    : `${excludedTiposPlano.length} tipos excluídos`}
-                </span>
-                <ChevronDown className={`h-4 w-4 text-text-secondary transition-transform ${tipoPlanoDropdownOpen ? 'rotate-180' : ''}`} id="chevron-tipo-plano" />
-              </button>
+          <div className="flex flex-col sm:flex-row gap-4 lg:shrink-0" id="controles-planos-por-fila">
+            {/* Dimensão do empilhamento */}
+            <div className="flex flex-col gap-2" id="bloco-empilhar-por">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                Empilhar por
+              </span>
+              <div className="flex rounded-lg border border-border bg-card p-1 shadow-sm" id="toggle-empilhar-por">
+                <button
+                  type="button"
+                  onClick={() => setEmpilharPor('fila')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    empilharPor === 'fila'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-text-secondary hover:bg-bg-secondary/40'
+                  }`}
+                  id="btn-empilhar-fila"
+                >
+                  Fila
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpilharPor('tipo')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    empilharPor === 'tipo'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-text-secondary hover:bg-bg-secondary/40'
+                  }`}
+                  id="btn-empilhar-tipo"
+                >
+                  Tipo de plano
+                </button>
+              </div>
+            </div>
 
-              {tipoPlanoDropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setTipoPlanoDropdownOpen(false)} id="overlay-tipo-plano" />
-                  <div className="absolute right-0 mt-1.5 z-20 w-full min-w-[280px] rounded-lg border border-border bg-surface p-2 shadow-lg max-h-72 overflow-y-auto scroll-minimal" id="menu-dropdown-tipo-plano">
-                    <input
-                      type="text"
-                      placeholder="Buscar playbook..."
-                      value={tipoPlanoSearch}
-                      onChange={(e) => setTipoPlanoSearch(e.target.value)}
-                      className="w-full mb-2 rounded border border-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      id="input-busca-tipo-plano"
-                    />
-                    <div className="flex flex-col gap-1">
-                      {filteredTiposPlano.map((tipo) => {
-                        const isExcluded = excludedTiposPlano.includes(tipo.id);
-                        return (
-                          <label
-                            key={tipo.id}
-                            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-bg-secondary/40 cursor-pointer text-sm text-text-primary"
-                            id={`label-opt-tipo-plano-${tipo.id}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isExcluded}
-                              onChange={() => {
-                                if (isExcluded) {
-                                  setExcludedTiposPlano(excludedTiposPlano.filter(id => id !== tipo.id));
-                                } else {
-                                  setExcludedTiposPlano([...excludedTiposPlano, tipo.id]);
-                                }
-                              }}
-                              className="rounded border-border text-indigo-600 focus:ring-indigo-500/20 h-4 w-4"
-                              id={`checkbox-tipo-plano-${tipo.id}`}
-                            />
-                            <span className="truncate flex-1">{tipo.nome}</span>
-                            <span className="text-xs text-text-secondary font-medium shrink-0">{tipo.total}</span>
-                          </label>
-                        );
-                      })}
-                      {filteredTiposPlano.length === 0 && (
-                        <span className="text-xs text-text-secondary text-center py-2" id="no-tipo-plano-found">Nenhum tipo de plano encontrado</span>
+            {/* Filtro próprio: exclusão de playbooks da análise */}
+            <div className="w-full sm:w-72 flex flex-col gap-2" id="bloco-filtro-tipo-plano">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5" />
+                Excluir playbooks da análise
+              </span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setTipoPlanoDropdownOpen(!tipoPlanoDropdownOpen)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm text-text-primary shadow-sm hover:bg-bg-secondary/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  id="btn-dropdown-tipo-plano"
+                >
+                  <span className="truncate">
+                    {excludedTiposPlano.length === 0
+                      ? 'Nenhum excluído'
+                      : excludedTiposPlano.length === 1
+                      ? '1 playbook excluído'
+                      : `${excludedTiposPlano.length} playbooks excluídos`}
+                  </span>
+                  <ChevronDown className={`h-4 w-4 text-text-secondary transition-transform ${tipoPlanoDropdownOpen ? 'rotate-180' : ''}`} id="chevron-tipo-plano" />
+                </button>
+
+                {tipoPlanoDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setTipoPlanoDropdownOpen(false)} id="overlay-tipo-plano" />
+                    <div className="absolute right-0 mt-1.5 z-20 w-full min-w-[300px] rounded-lg border border-border bg-surface p-2 shadow-lg max-h-72 overflow-y-auto scroll-minimal" id="menu-dropdown-tipo-plano">
+                      <input
+                        type="text"
+                        placeholder="Buscar playbook..."
+                        value={tipoPlanoSearch}
+                        onChange={(e) => setTipoPlanoSearch(e.target.value)}
+                        className="w-full mb-2 rounded border border-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        id="input-busca-tipo-plano"
+                      />
+                      <p className="px-2 pb-2 text-[11px] leading-snug text-text-secondary">
+                        Marque para <strong>remover</strong> os planos daquele playbook do relatório.
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {filteredTiposPlano.map((tipo) => {
+                          const isExcluded = excludedTiposPlano.includes(tipo.id);
+                          return (
+                            <label
+                              key={tipo.id}
+                              className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-bg-secondary/40 cursor-pointer text-sm text-text-primary"
+                              id={`label-opt-tipo-plano-${tipo.id}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isExcluded}
+                                onChange={() => {
+                                  if (isExcluded) {
+                                    setExcludedTiposPlano(excludedTiposPlano.filter(id => id !== tipo.id));
+                                  } else {
+                                    setExcludedTiposPlano([...excludedTiposPlano, tipo.id]);
+                                  }
+                                }}
+                                className="rounded border-border text-indigo-600 focus:ring-indigo-500/20 h-4 w-4"
+                                id={`checkbox-tipo-plano-${tipo.id}`}
+                              />
+                              <span className={`truncate flex-1 ${isExcluded ? 'line-through text-text-secondary' : ''}`}>{tipo.nome}</span>
+                              <span className="text-xs text-text-secondary font-medium shrink-0">{tipo.total}</span>
+                            </label>
+                          );
+                        })}
+                        {filteredTiposPlano.length === 0 && (
+                          <span className="text-xs text-text-secondary text-center py-2" id="no-tipo-plano-found">Nenhum playbook encontrado</span>
+                        )}
+                      </div>
+                      {excludedTiposPlano.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExcludedTiposPlano([])}
+                          className="mt-2 w-full rounded border border-border px-2 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-secondary/40"
+                          id="btn-limpar-tipo-plano"
+                        >
+                          Limpar exclusões
+                        </button>
                       )}
                     </div>
-                    {excludedTiposPlano.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setExcludedTiposPlano([])}
-                        className="mt-2 w-full rounded border border-border px-2 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-secondary/40"
-                        id="btn-limpar-tipo-plano"
-                      >
-                        Limpar exclusões
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Card do Gráfico */}
+        {/* Card do Gráfico + Tabela */}
         <div className="rounded-xl border border-border bg-card p-8 shadow-sm flex flex-col min-h-[420px]" id="card-planos-por-fila-chart">
           {loadingData ? (
             <div className="flex flex-1 items-center justify-center py-16" id="planos-por-fila-loading">
@@ -4936,15 +5081,16 @@ export const DashboardGerencialV2: React.FC = () => {
           ) : planosPorFilaData.totalGeral === 0 ? (
             <div className="flex flex-col items-center justify-center flex-1 py-16 text-center border border-dashed border-border rounded-lg bg-slate-50/30 dark:bg-slate-900/10 p-6" id="planos-por-fila-vazio">
               <span className="text-xs text-text-secondary font-medium max-w-md leading-relaxed">
-                Nenhum plano para exibir. Verifique se você não excluiu todos os tipos de plano no filtro deste card.
+                Nenhum plano criado nas últimas 20 semanas para o recorte atual. Verifique se você não
+                excluiu todos os playbooks no filtro deste relatório.
               </span>
             </div>
           ) : (
             <>
-              {/* KPIs do recorte atual */}
+              {/* KPIs da janela de 20 semanas */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8" id="planos-por-fila-kpis">
                 <div className="rounded-lg border border-border border-opacity-40 bg-bg-secondary/10 p-4" id="kpi-planos-total">
-                  <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Total de planos criados</span>
+                  <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Planos criados (20 sem.)</span>
                   <p className="text-2xl font-bold text-text-primary mt-1">{planosPorFilaData.totalGeral}</p>
                 </div>
                 <div className="rounded-lg border border-border border-opacity-40 bg-bg-secondary/10 p-4" id="kpi-planos-retencao">
@@ -4963,6 +5109,63 @@ export const DashboardGerencialV2: React.FC = () => {
                   options={planosPorFilaOptions as any}
                   plugins={planosPorFilaPlugins}
                 />
+              </div>
+
+              {/* Tabela do relatório: semana a semana, sempre por fila */}
+              <div className="mt-8 overflow-auto max-h-[420px] scroll-minimal rounded-lg border border-border border-opacity-40" id="planos-por-fila-table-wrapper">
+                <table className="w-full text-left text-sm border-collapse" id="planos-por-fila-table">
+                  <thead>
+                    <tr className="border-b border-border border-opacity-40 bg-bg-secondary/10">
+                      <th className="sticky top-0 bg-card z-10 py-3 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-border border-opacity-40" id="th-semana-planos">
+                        Semana
+                      </th>
+                      {planosPorFilaData.filas.map((fila) => (
+                        <th
+                          key={fila}
+                          className="sticky top-0 bg-card z-10 py-3 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40"
+                          id={`th-planos-${fila}`}
+                        >
+                          {FILA_LABELS[fila] || fila}
+                        </th>
+                      ))}
+                      <th className="sticky top-0 bg-card z-10 py-3 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider text-right border-b border-border border-opacity-40" id="th-planos-total">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border divide-opacity-30">
+                    {planosPorFilaData.linhas.map((linha, idx) => (
+                      <tr key={linha.semana} className="hover:bg-bg-secondary/40 odd:bg-card even:bg-bg-secondary/10 transition-colors" id={`row-planos-semana-${idx}`}>
+                        <td className="py-3 px-4 font-semibold text-text-primary" id={`cell-planos-semana-${idx}`}>
+                          {linha.label}
+                        </td>
+                        {planosPorFilaData.filas.map((fila) => (
+                          <td key={fila} className="py-3 px-4 text-right text-text-secondary font-medium" id={`cell-planos-${fila}-${idx}`}>
+                            {linha.porFila[fila] || 0}
+                          </td>
+                        ))}
+                        <td className="py-3 px-4 text-right font-bold text-text-primary" id={`cell-planos-total-${idx}`}>
+                          {linha.total}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border border-opacity-40 bg-bg-secondary/20">
+                      <td className="py-3 px-4 text-xs font-bold text-text-secondary uppercase tracking-wider" id="tfoot-planos-label">
+                        Total
+                      </td>
+                      {planosPorFilaData.filas.map((fila) => (
+                        <td key={fila} className="py-3 px-4 text-right font-bold text-text-primary" id={`tfoot-planos-${fila}`}>
+                          {planosPorFilaData.totaisPorFila[fila] || 0}
+                        </td>
+                      ))}
+                      <td className="py-3 px-4 text-right font-bold text-text-primary" id="tfoot-planos-total">
+                        {planosPorFilaData.totalGeral}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </>
           )}

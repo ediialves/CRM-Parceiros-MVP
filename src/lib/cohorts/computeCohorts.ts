@@ -61,7 +61,11 @@ export interface CohortRawData {
  */
 const DATA_CORTE_SNAPSHOTS = '2026-05-11';
 
-const getMondayOfWeek = (dateStr: string): string => {
+/**
+ * Segunda-feira da semana de uma data `YYYY-MM-DD` (critério único de safra/semana).
+ * Exportado porque o Dashboard Gerencial V2 agrupa por semana com o mesmo critério.
+ */
+export const getMondayOfWeek = (dateStr: string): string => {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00Z');
   if (isNaN(d.getTime())) return '';
