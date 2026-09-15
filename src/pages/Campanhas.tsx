@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllByIds } from '../lib/supabaseFetch';
 import { Megaphone, Calendar, Users, AlertCircle, Loader2, Plus, X, Upload, CheckCircle, Columns } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
@@ -39,7 +40,7 @@ export function Campanhas() {
   const [partnerIdsText, setPartnerIdsText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importResult, setImportResult] = useState<{ imported: number; notFound: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; notFound: number; semGerente: string[] } | null>(null);
 
   const fetchCampaigns = async () => {
     try {
@@ -130,41 +131,55 @@ export function Campanhas() {
       setIsImporting(true);
       setImportError(null);
 
-      // Parse IDs using comma, semicolon, or newline separators
-      const parsedIds = partnerIdsText
-        .replace(/[;\n]/g, ',')
-        .split(',')
-        .map(id => id.trim())
-        .filter(id => id.length > 0);
+      // Parse IDs using comma, semicolon, or newline separators.
+      // Deduplica: o mesmo accountancy_id colado duas vezes não deve contar duas
+      // vezes em "importados" nem em "não encontrados".
+      const parsedIds: string[] = Array.from(new Set<string>(
+        partnerIdsText
+          .replace(/[;\n]/g, ',')
+          .split(',')
+          .map(id => id.trim())
+          .filter(id => id.length > 0)
+      ));
 
       if (parsedIds.length === 0) {
         setImportError('Nenhum ID de parceiro válido encontrado no texto digitado.');
         return;
       }
 
-      // 1. Fetch matching partners from Supabase to resolve IDs and gerente_ids
-      const { data: partnersData, error: partnersError } = await supabase
-        .from('partners')
-        .select('id, gerente_id, accountancy_id')
-        .in('accountancy_id', parsedIds);
+      // 1. Fetch matching partners from Supabase to resolve IDs and gerente_ids.
+      // Paginado por fetchAllByIds: a lista colada é livre e pode passar do teto de
+      // linhas do PostgREST / do tamanho máximo da URL (ver CLAUDE.md, seção 2).
+      const foundPartners = await fetchAllByIds(
+        'partners',
+        'id, gerente_id, accountancy_id',
+        'accountancy_id',
+        parsedIds,
+        q => q.order('id', { ascending: true })
+      );
 
-      if (partnersError) {
-        throw partnersError;
-      }
-
-      const foundPartners = partnersData || [];
-      const totalRequested = parsedIds.length;
-      
       // Calculate how many requested accountancy_ids were actually resolved to database records
       const resolvedAccountancyIds = new Set(foundPartners.map(p => p.accountancy_id));
       const notFoundCount = parsedIds.filter(id => !resolvedAccountancyIds.has(id)).length;
 
-      if (foundPartners.length > 0) {
-        // 2. Prepare campaign_partners items
-        const campaignPartnersToInsert = foundPartners.map(p => ({
+      // `campaign_partners.gerente_id` é NOT NULL (é a chave do RLS: o gerente só
+      // enxerga os cards onde ele é o gerente_id), mas `partners.gerente_id` é
+      // nullable e há centenas de parceiros sem esse vínculo. Parceiro sem gerente
+      // não pode entrar na campanha — separamos em vez de deixar o lote inteiro
+      // falhar com "null value in column gerente_id violates not-null constraint".
+      // Resolver o gerente pelo nome (`partners.gerente`, texto) não é opção aqui:
+      // o RLS de `users` só deixa o usuário ler o próprio perfil.
+      const importaveis = foundPartners.filter(p => p.gerente_id);
+      const semGerente = foundPartners
+        .filter(p => !p.gerente_id)
+        .map(p => String(p.accountancy_id));
+
+      if (importaveis.length > 0) {
+        // 2. Prepare campaign_partners items, clonando o gerente do parceiro
+        const campaignPartnersToInsert = importaveis.map(p => ({
           campaign_id: selectedCampaignForImport.id,
           partner_id: p.id,
-          gerente_id: null,
+          gerente_id: p.gerente_id,
           status: 'nao_abordado',
           entrou_nao_abordado_em: new Date().toISOString()
         }));
@@ -184,8 +199,9 @@ export function Campanhas() {
 
       // Record result to display inside modal
       setImportResult({
-        imported: foundPartners.length,
-        notFound: notFoundCount
+        imported: importaveis.length,
+        notFound: notFoundCount,
+        semGerente
       });
 
     } catch (err: any) {
@@ -480,8 +496,24 @@ export function Campanhas() {
                   <h3 className="font-bold text-lg text-text-primary">Processo Concluído</h3>
                   <p className="text-sm font-semibold text-text-secondary max-w-sm mt-1">
                     {importResult.imported} parceiros importados, {importResult.notFound} não encontrados
+                    {importResult.semGerente.length > 0 && `, ${importResult.semGerente.length} sem gerente`}
                   </p>
                 </div>
+
+                {importResult.semGerente.length > 0 && (
+                  <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg text-xs leading-relaxed text-text-secondary space-y-1.5">
+                    <p className="flex items-start gap-2 font-semibold text-text-primary">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                      <span>
+                        {importResult.semGerente.length} parceiro(s) não puderam entrar na campanha por não terem
+                        gerente vinculado no cadastro. Vincule o gerente e importe novamente.
+                      </span>
+                    </p>
+                    <p className="font-mono break-all text-text-secondary/90 max-h-24 overflow-y-auto">
+                      {importResult.semGerente.join(', ')}
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end pt-2">
                   <button
@@ -508,6 +540,7 @@ export function Campanhas() {
                   <p>• Cole a lista de <span className="font-semibold text-text-primary">accountancy_ids</span> (ID da contabilidade).</p>
                   <p>• Pode separar as entradas por vírgula, ponto e vírgula ou uma por linha.</p>
                   <p>• O sistema buscará o id do parceiro e clonará seu gerente_id no registro da campanha.</p>
+                  <p>• Parceiro sem gerente vinculado no cadastro não pode entrar na campanha e será listado no resumo.</p>
                   <p>• Registros duplicados na mesma campanha serão desconsiderados automaticamente.</p>
                 </div>
 
