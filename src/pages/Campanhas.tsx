@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchAllByIds } from '../lib/supabaseFetch';
-import { Megaphone, Calendar, Users, AlertCircle, Loader2, Plus, X, Upload, CheckCircle, Columns } from 'lucide-react';
+import { Megaphone, Calendar, Users, AlertCircle, Loader2, Plus, X, Upload, CheckCircle, Columns, Trash2 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
 interface CampaignPartner {
@@ -41,6 +41,12 @@ export function Campanhas() {
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; notFound: number; semGerente: string[] } | null>(null);
+
+  // State for Excluir Campanha Modal (admin-only)
+  const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingCampaign, setIsDeletingCampaign] = useState(false);
+  const [deleteCampaignError, setDeleteCampaignError] = useState<string | null>(null);
 
   const fetchCampaigns = async () => {
     try {
@@ -212,6 +218,50 @@ export function Campanhas() {
     }
   };
 
+  // Handle Excluir Campanha (admin-only)
+  const handleDeleteCampaign = async () => {
+    if (!campaignToDelete) return;
+
+    try {
+      setIsDeletingCampaign(true);
+      setDeleteCampaignError(null);
+
+      // Um único DELETE basta: `campaign_partners.campaign_id` e
+      // `campaign_timeline.campaign_partner_id` são ON DELETE CASCADE, então os
+      // parceiros da campanha e todo o histórico deles caem junto.
+      // O `.select('id')` existe para saber se a linha realmente saiu: o RLS de
+      // `campaigns` só dá DELETE para admin e, para quem não é, o Postgres não
+      // devolve erro — apenas apaga zero linhas, o que pareceria sucesso.
+      const { data: deleted, error: deleteError } = await supabase
+        .from('campaigns')
+        .delete()
+        .eq('id', campaignToDelete.id)
+        .select('id');
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      if (!deleted || deleted.length === 0) {
+        throw new Error('A campanha não foi excluída. Verifique se você tem permissão de administrador.');
+      }
+
+      setCampaigns(prev => prev.filter(c => c.id !== campaignToDelete.id));
+      handleCloseDeleteModal();
+    } catch (err: any) {
+      console.error('Erro ao excluir campanha:', err);
+      setDeleteCampaignError(err.message || 'Ocorreu um erro ao excluir a campanha.');
+    } finally {
+      setIsDeletingCampaign(false);
+    }
+  };
+
+  const handleCloseDeleteModal = () => {
+    setCampaignToDelete(null);
+    setDeleteConfirmText('');
+    setDeleteCampaignError(null);
+  };
+
   const handleCloseImportModal = () => {
     setSelectedCampaignForImport(null);
     setPartnerIdsText('');
@@ -356,15 +406,29 @@ export function Campanhas() {
                     <Columns className="w-3.5 h-3.5" /> Abrir Kanban
                   </button>
 
-                  {/* Option to import partners on this campaign, admin-only */}
-                  {isAdmin && isAtiva && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCampaignForImport(campaign)}
-                      className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-primary/5 border border-border hover:border-primary/20 hover:text-primary text-text-secondary font-semibold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
-                    >
-                      <Upload className="w-3.5 h-3.5" /> Importar Parceiros
-                    </button>
+                  {/* Admin-only actions: importar (só em campanha ativa) e excluir */}
+                  {isAdmin && (
+                    <div className="mt-2 flex items-center gap-2">
+                      {isAtiva && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCampaignForImport(campaign)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-primary/5 border border-border hover:border-primary/20 hover:text-primary text-text-secondary font-semibold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> Importar Parceiros
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setCampaignToDelete(campaign)}
+                        title="Excluir campanha"
+                        aria-label={`Excluir campanha ${campaign.name}`}
+                        className={`${isAtiva ? 'px-2.5' : 'flex-1 gap-1.5 px-3'} flex items-center justify-center py-1.5 bg-surface hover:bg-rose-500/5 border border-border hover:border-rose-500/30 text-text-secondary hover:text-rose-600 font-semibold text-xs rounded-lg shadow-sm transition-all cursor-pointer`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {!isAtiva && 'Excluir campanha'}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -586,6 +650,111 @@ export function Campanhas() {
           </div>
         </div>
       )}
+
+      {/* MODAL: EXCLUIR CAMPANHA (admin-only) */}
+      {isAdmin && campaignToDelete && (() => {
+        const partnersCount = getPartnersCount(campaignToDelete);
+        // Campanha vazia é lixo de teste: um clique basta. Campanha com parceiros
+        // leva junto o histórico inteiro do kanban (campaign_timeline), então exige
+        // digitar o nome — a confirmação tem que ser proporcional ao que se perde.
+        const exigeConfirmacaoPorNome = partnersCount > 0;
+        const podeExcluir = !exigeConfirmacaoPorNome
+          || deleteConfirmText.trim() === campaignToDelete.name.trim();
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div
+              id="modal-excluir-campanha"
+              className="bg-white border border-border rounded-xl shadow-xl w-full max-w-md p-6 relative flex flex-col gap-4 animate-in zoom-in-95 duration-200"
+            >
+              <button
+                onClick={handleCloseDeleteModal}
+                disabled={isDeletingCampaign}
+                className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-surface text-text-secondary transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
+
+              <div>
+                <h2 className="text-lg font-bold text-text-primary flex items-center gap-1.5">
+                  <Trash2 className="w-5 h-5 text-rose-600" />
+                  Excluir Campanha
+                </h2>
+                <p className="text-xs text-text-secondary mt-1">
+                  Campanha: <span className="font-semibold text-text-primary">{campaignToDelete.name}</span>
+                </p>
+              </div>
+
+              <div className="p-3 bg-rose-500/5 border border-rose-500/20 rounded-lg text-xs leading-relaxed text-text-secondary space-y-1">
+                <p className="flex items-start gap-2 font-semibold text-text-primary">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+                  <span>Esta ação é permanente e não pode ser desfeita.</span>
+                </p>
+                {partnersCount > 0 ? (
+                  <p>
+                    Os <span className="font-semibold text-text-primary">{partnersCount} parceiro(s)</span> desta
+                    campanha e todo o histórico de movimentações do kanban (fases, conversões e motivos de perda)
+                    serão apagados junto.
+                  </p>
+                ) : (
+                  <p>Esta campanha não tem nenhum parceiro importado.</p>
+                )}
+                <p>Os cadastros dos parceiros e seus planos não são afetados.</p>
+              </div>
+
+              {exigeConfirmacaoPorNome && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-text-primary">
+                    Para confirmar, digite o nome da campanha:
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    disabled={isDeletingCampaign}
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder={campaignToDelete.name}
+                    className="w-full p-2.5 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 transition-all"
+                  />
+                </div>
+              )}
+
+              {deleteCampaignError && (
+                <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg text-danger flex items-start gap-2 text-xs">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{deleteCampaignError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeletingCampaign}
+                  onClick={handleCloseDeleteModal}
+                  className="px-4 py-2 bg-surface hover:bg-surface/80 border border-border text-text-primary font-semibold rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingCampaign || !podeExcluir}
+                  onClick={handleDeleteCampaign}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-sm transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeletingCampaign ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    'Excluir campanha'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
