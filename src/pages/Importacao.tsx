@@ -3,10 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { FileUpload } from '../components/import/FileUpload';
 import { ImportPreview } from '../components/import/ImportPreview';
 import { ImportLog } from '../components/import/ImportLog';
+import { NovoGerenteModal } from '../components/import/NovoGerenteModal';
 import { parsePartnersExcel, ImportDiagnostics } from '../lib/import/parsePartners';
 import { parseManagersExcel } from '../lib/import/parseManagers';
 import { ImportLog as ILog } from '../types';
-import { ShieldAlert, Users, Target, CheckCircle2, XCircle } from 'lucide-react';
+import { ShieldAlert, Users, Target, CheckCircle2, XCircle, UserPlus } from 'lucide-react';
 import { LoadingState } from '../components/ui/LoadingState';
 import { supabase } from '../lib/supabase';
 import { invalidarCache } from '../lib/dataCache';
@@ -20,6 +21,7 @@ export const Importacao: React.FC = () => {
   const [logs, setLogs] = useState<ILog[]>([]);
   const [currentFileName, setCurrentFileName] = useState('');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [isNovoGerenteModalOpen, setIsNovoGerenteModalOpen] = useState(false);
 
   if (!isAdmin) {
     return (
@@ -351,6 +353,27 @@ export const Importacao: React.FC = () => {
             />
           )}
 
+          {activeTab === 'managers' && previewData.length === 0 && !importing && (
+            <div className="bg-primary/5 p-4 rounded-lg border border-primary/10 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-primary mb-1 flex items-center gap-2">
+                  <UserPlus size={16} />
+                  É só um gerente?
+                </h4>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Cadastre direto pelo formulário, sem montar planilha — o código de convite aparece na hora.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNovoGerenteModalOpen(true)}
+                className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg text-sm shadow-sm transition-colors cursor-pointer"
+              >
+                <UserPlus size={16} /> Cadastrar gerente
+              </button>
+            </div>
+          )}
+
           {activeTab === 'partners' && previewData.length === 0 && !importing && (
             <div className="bg-primary/5 p-4 rounded-lg border border-primary/10">
               <h4 className="text-sm font-bold text-primary mb-2 flex items-center gap-2">
@@ -368,6 +391,21 @@ export const Importacao: React.FC = () => {
           <ImportLog logs={logs} />
         </div>
       </div>
+
+      {isNovoGerenteModalOpen && (
+        <NovoGerenteModal
+          onClose={() => setIsNovoGerenteModalOpen(false)}
+          onCadastrado={(nome) => {
+            setLogs(prev => [{
+              id: `log-${Date.now()}`,
+              tipo: 'Gerente avulso',
+              arquivo_nome: nome,
+              importado_por: user?.nome || 'Admin',
+              created_at: new Date().toISOString(),
+            }, ...prev]);
+          }}
+        />
+      )}
     </div>
   );
 };

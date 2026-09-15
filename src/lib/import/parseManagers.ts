@@ -1,14 +1,5 @@
 import * as XLSX from 'xlsx';
-import { supabase } from '../supabase';
-
-const generateInviteCode = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-};
+import { gerarInviteCode } from '../inviteCode';
 
 interface ParseResult {
   data: { nome: string; email: string; invite_code: string }[];
@@ -58,7 +49,7 @@ export const parseManagersExcel = (file: File): Promise<ParseResult> => {
             continue;
           }
 
-          const inviteCode = generateInviteCode();
+          const inviteCode = gerarInviteCode();
           managersData.push({ nome, email, invite_code: inviteCode });
         }
 
