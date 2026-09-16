@@ -175,10 +175,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('DEBUG [AuthContext]: Intercepted invalid refresh token error, clearing session.');
         event.preventDefault(); // Prevent bubbling as uncaught error
         cleanSupabaseLocalStorage();
-        supabase.auth.signOut().catch(() => {}).finally(() => {
-          setRealUser(null);
-          setLoading(false);
-        });
+        setRealUser(null);
+        setLoading(false);
       }
     };
 
@@ -189,10 +187,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         console.warn('DEBUG [AuthContext]: Error in getSession:', error.message);
         cleanSupabaseLocalStorage();
-        supabase.auth.signOut().catch(() => {}).finally(() => {
-          setRealUser(null);
-          setLoading(false);
-        });
+        setRealUser(null);
+        setLoading(false);
         return;
       }
       if (session) {
@@ -203,10 +199,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }).catch(err => {
       console.warn('DEBUG [AuthContext]: Exception in getSession:', err);
       cleanSupabaseLocalStorage();
-      supabase.auth.signOut().catch(() => {}).finally(() => {
-        setRealUser(null);
-        setLoading(false);
-      });
+      setRealUser(null);
+      setLoading(false);
     });
 
     // Listen for auth changes
