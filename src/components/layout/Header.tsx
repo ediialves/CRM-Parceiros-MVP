@@ -1,16 +1,22 @@
-import React from 'react';
-import { Menu, User, Bell, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Menu, User, Bell, LogOut, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../ui/Badge';
+import { SeletorGerenteModal } from './SeletorGerenteModal';
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
-  const { user, signOut } = useAuth();
+  const { user, realUser, impersonando, signOut } = useAuth();
+  const [seletorAberto, setSeletorAberto] = useState(false);
 
   if (!user) return null;
+
+  // Sai do menu enquanto o modo está ativo: quem está observando usa a faixa
+  // amarela para voltar, e aninhar um modo dentro do outro só confundiria.
+  const podeVerComoGerente = realUser?.role === 'admin' && !impersonando;
 
   return (
     <header className="h-14 bg-surface border-b border-border flex items-center justify-between px-4 sticky top-0 z-30">
@@ -41,10 +47,19 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             <div className="w-8 h-8 rounded-full bg-primary-light flex items-center justify-center text-white cursor-pointer">
               <User size={18} />
             </div>
-            <div className="absolute right-0 top-full mt-2 w-48 bg-surface border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+            <div className="absolute right-0 top-full mt-2 w-52 bg-surface border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all overflow-hidden">
+              {podeVerComoGerente && (
+                <button
+                  onClick={() => setSeletorAberto(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-text-primary hover:bg-primary/5 hover:text-primary transition-colors border-b border-border cursor-pointer"
+                >
+                  <Eye size={16} />
+                  Ver como gerente
+                </button>
+              )}
               <button 
                 onClick={() => signOut()}
-                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-danger hover:bg-danger/5 rounded-lg transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-danger hover:bg-danger/5 transition-colors cursor-pointer"
               >
                 <LogOut size={16} />
                 Sair da Conta
@@ -53,6 +68,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </div>
         </div>
       </div>
+
+      {seletorAberto && <SeletorGerenteModal onClose={() => setSeletorAberto(false)} />}
     </header>
   );
 };

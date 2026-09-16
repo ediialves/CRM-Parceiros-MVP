@@ -286,7 +286,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
 export function CampanhaKanban() {
   const { id: campaignId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [partnersData, setPartnersData] = useState<CampaignPartnerData[]>([]);
@@ -398,7 +398,7 @@ export function CampanhaKanban() {
       setCampaign(campaignRes as Campaign);
 
       // 2. Fetch Campaign Partners with JOIN parameters on partners table (using partners.gerente instead of users table)
-      const { data: partnersRes, error: partnersError } = await supabase
+      const baseCards = supabase
         .from('campaign_partners')
         .select(`
           id,
@@ -428,8 +428,15 @@ export function CampanhaKanban() {
             segmento,
             perfil_parceiro
           )
-        `)
-        .eq('campaign_id', campaignId);
+        `);
+
+      // Sem este filtro a tela dependeria só do RLS, que devolve todos os cards
+      // para um admin — inclusive quando ele está vendo o sistema como gerente.
+      const queryCards = isAdmin
+        ? baseCards.eq('campaign_id', campaignId)
+        : baseCards.eq('campaign_id', campaignId).eq('gerente_id', user!.id);
+
+      const { data: partnersRes, error: partnersError } = await queryCards;
 
       if (partnersError) {
         throw partnersError;
@@ -482,7 +489,7 @@ export function CampanhaKanban() {
   useEffect(() => {
     if (authLoading) return;
     fetchData();
-  }, [campaignId, authLoading]);
+  }, [campaignId, authLoading, user?.id, isAdmin]);
 
   // Extract unique manager names from cards in memory
   const uniqueManagers = Array.from(

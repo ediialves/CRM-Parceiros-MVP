@@ -53,15 +53,18 @@ export function Campanhas() {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('campaigns')
-        .select(`
-          *,
-          campaign_partners (
-            id
-          )
-        `)
-        .order('created_at', { ascending: false });
+      // Para admin: todas as campanhas. Para gerente (e para o admin no modo
+      // "ver como gerente"): só as campanhas onde ele tem card, com a contagem
+      // limitada aos cards dele — que é o que o RLS faz para um gerente de
+      // verdade, e que o RLS do admin sozinho não reproduziria.
+      const query = isAdmin
+        ? supabase.from('campaigns').select('*, campaign_partners ( id )')
+        : supabase
+            .from('campaigns')
+            .select('*, campaign_partners!inner ( id )')
+            .eq('campaign_partners.gerente_id', user!.id);
+
+      const { data, error: fetchError } = await query.order('created_at', { ascending: false });
 
       if (fetchError) {
         throw fetchError;
@@ -79,9 +82,9 @@ export function Campanhas() {
   };
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !user) return;
     fetchCampaigns();
-  }, [authLoading]);
+  }, [authLoading, user?.id, isAdmin]);
 
   // Handle Nova Campanha submission
   const handleCreateCampaign = async (e: React.FormEvent) => {

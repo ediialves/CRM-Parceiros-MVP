@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { ModoVisaoBanner } from './ModoVisaoBanner';
 
 export const DashboardLayout: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -14,6 +15,7 @@ export const DashboardLayout: React.FC = () => {
       <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} />
       
       <div className="flex flex-col flex-1 min-w-0">
+        <ModoVisaoBanner />
         <Header onMenuClick={toggleSidebar} />
         
         <main className="flex-1 overflow-y-auto p-4 md:p-8">

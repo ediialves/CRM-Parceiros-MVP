@@ -9,17 +9,44 @@ interface User {
   role: 'admin' | 'gerente';
 }
 
+export interface GerenteResumo {
+  id: string;
+  nome: string;
+  email: string;
+  invite_used: boolean;
+}
+
 interface AuthContextType {
+  /** Perfil EFETIVO: o gerente observado durante o modo de visão, senão o real. */
   user: User | null;
+  /** Quem está de fato logado. Não muda no modo de visão. */
+  realUser: User | null;
+  /** Verdadeiro enquanto um admin está vendo o sistema como um gerente. */
+  impersonando: boolean;
   isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
+  verComoGerente: (gerente: GerenteResumo) => void;
+  sairDoModoVisao: () => void;
 }
+
+// sessionStorage (e não localStorage) de propósito: o modo de visão morre junto
+// com a aba. Um admin que fecha o navegador não volta dias depois ainda vendo a
+// tela de outra pessoa sem perceber.
+const CHAVE_IMPERSONACAO = 'capro:vendo-como-gerente';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [realUser, setRealUser] = useState<User | null>(null);
+  const [gerenteObservado, setGerenteObservado] = useState<User | null>(() => {
+    try {
+      const salvo = sessionStorage.getItem(CHAVE_IMPERSONACAO);
+      return salvo ? (JSON.parse(salvo) as User) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const hasLoggedAccess = useRef(false);
   // auth_id do perfil que ja esta carregado, para nao rebuscar o mesmo usuario.
@@ -54,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       console.log('DEBUG [AuthContext]: Profile loaded:', data);
       if (data) {
-        setUser(data as User);
+        setRealUser(data as User);
 
         // Log access once per session
         if (!hasLoggedAccess.current) {
@@ -70,7 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Error fetching user profile:', err);
       loadedAuthIdRef.current = null; // libera para nova tentativa
-      setUser(null);
+      setRealUser(null);
     } finally {
       setLoading(false);
     }
@@ -91,6 +118,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const limparImpersonacao = () => {
+    try {
+      sessionStorage.removeItem(CHAVE_IMPERSONACAO);
+    } catch {
+      /* aba privada / storage bloqueado: o estado em memória já basta */
+    }
+    setGerenteObservado(null);
+  };
+
+  /**
+   * Entra no modo "ver como gerente".
+   *
+   * Não há troca de sessão nem de token: o admin continua autenticado como ele
+   * mesmo e as policies de admin (`ALL` em todas as tabelas de dados) é que
+   * liberam a leitura. O que muda é só o perfil EFETIVO que as telas enxergam —
+   * como elas filtram por `user.id` (ex.: `.eq('gerente_id', user.id)` no
+   * MeuDashboard), passar o id do gerente já reproduz a visão dele.
+   *
+   * `invalidarCache()` é obrigatório aqui: o `dataCache` tem chaves sem recorte
+   * de usuário (`dashboard:parceiros`), então sem isso o admin veria os 4.5k
+   * parceiros da base dentro da visão do gerente — ou o contrário ao sair.
+   */
+  const verComoGerente = (gerente: GerenteResumo) => {
+    const perfil: User = {
+      id: gerente.id,
+      nome: gerente.nome,
+      email: gerente.email,
+      role: 'gerente'
+    };
+    invalidarCache();
+    try {
+      sessionStorage.setItem(CHAVE_IMPERSONACAO, JSON.stringify(perfil));
+    } catch {
+      /* idem: sem persistência, o modo dura só enquanto a página não recarregar */
+    }
+    setGerenteObservado(perfil);
+  };
+
+  const sairDoModoVisao = () => {
+    invalidarCache();
+    limparImpersonacao();
+  };
+
   useEffect(() => {
     // Global listener for unhandled auth/token refresh rejection errors
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
@@ -106,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         event.preventDefault(); // Prevent bubbling as uncaught error
         cleanSupabaseLocalStorage();
         supabase.auth.signOut().catch(() => {}).finally(() => {
-          setUser(null);
+          setRealUser(null);
           setLoading(false);
         });
       }
@@ -120,7 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('DEBUG [AuthContext]: Error in getSession:', error.message);
         cleanSupabaseLocalStorage();
         supabase.auth.signOut().catch(() => {}).finally(() => {
-          setUser(null);
+          setRealUser(null);
           setLoading(false);
         });
         return;
@@ -134,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('DEBUG [AuthContext]: Exception in getSession:', err);
       cleanSupabaseLocalStorage();
       supabase.auth.signOut().catch(() => {}).finally(() => {
-        setUser(null);
+        setRealUser(null);
         setLoading(false);
       });
     });
@@ -147,7 +217,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Sem isto, o proximo usuario a logar nesta aba veria o dado cacheado do anterior.
         invalidarCache();
         loadedAuthIdRef.current = null;
-        setUser(null);
+        limparImpersonacao();
+        setRealUser(null);
         setLoading(false);
       } else if (session) {
         fetchUserProfile(session.user.id);
@@ -169,14 +240,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       cleanSupabaseLocalStorage();
       invalidarCache();
       loadedAuthIdRef.current = null;
-      setUser(null);
+      limparImpersonacao();
+      setRealUser(null);
     }
   };
 
+  // Só um admin de verdade pode estar observando alguém. A checagem contra
+  // `realUser` evita que um estado velho no sessionStorage sobreviva a uma troca
+  // de conta na mesma aba e coloque um gerente vendo a visão de outro.
+  const impersonando = realUser?.role === 'admin' && gerenteObservado !== null;
+  const user = impersonando ? gerenteObservado : realUser;
+
+  // Cai para `false` durante o modo de visão de propósito: é isso que faz o menu
+  // e as rotas `adminOnly` se comportarem como se comportam para o gerente —
+  // que é justamente a visão que se quer inspecionar.
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading, signOut }}>
+    <AuthContext.Provider
+      value={{ user, realUser, impersonando, isAdmin, loading, signOut, verComoGerente, sairDoModoVisao }}
+    >
       {children}
     </AuthContext.Provider>
   );

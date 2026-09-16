@@ -7,11 +7,21 @@ import { buscarComCache, invalidarCache, temCacheValido } from '../lib/dataCache
 import { Partner, Plan, Task } from '../types';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
-/** Chave do cache desta tela. Invalidada quando um plano e criado. */
-const CACHE_KEY = 'dashboard:parceiros';
+/**
+ * Chave do cache desta tela, com o recorte embutido.
+ *
+ * Admin e gerente veem listas diferentes, então a chave precisa distinguir os
+ * dois — senão quem entra no modo "ver como gerente" recebe do cache os ~4.5k
+ * parceiros da base inteira (e, ao sair, a carteira de uma pessoa só).
+ * Invalidada também quando um plano é criado.
+ */
+const chaveCache = (escopo: string) => `dashboard:parceiros:${escopo}`;
 
 export const Dashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  // Admin enxerga a base toda; gerente (ou admin no modo de visão) só a carteira.
+  const escopo = isAdmin ? 'admin' : (user?.id ?? 'anon');
+  const CACHE_KEY = chaveCache(escopo);
   const [partners, setPartners] = useState<Partner[]>([]);
   // Se ja existe cache valido, nao mostra o spinner: a volta para a tela e instantanea.
   const [loading, setLoading] = useState(() => !temCacheValido(CACHE_KEY));
@@ -25,7 +35,13 @@ export const Dashboard: React.FC = () => {
         return await fetchAllPaginated(
           'partners',
           'id, accountancy_id, salesforce_id, nome, gerente, nivel, perfil_parceiro, perfil_servico, fila, licencas, licencas_engajadas, estoque, percentual_engajamento, gerente_id, cnpjs, cnpjs_livres, contas_potencial, ratio, segmento, atribuidas, percentual_atribuidas',
-          q => q.order('nome')
+          // O filtro explícito importa: sem ele a tela dependeria só do RLS, que
+          // para um admin devolve a base inteira — inclusive quando ele está
+          // vendo o sistema como um gerente, quebrando a visão que quer inspecionar.
+          q => {
+            const ordenada = q.order('nome');
+            return isAdmin ? ordenada : ordenada.eq('gerente_id', user!.id);
+          }
         );
       };
 
@@ -99,6 +115,7 @@ export const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchPartners(true);
 
     const handlePlanCreated = () => {
@@ -112,7 +129,10 @@ export const Dashboard: React.FC = () => {
     return () => {
       window.removeEventListener('plan-created', handlePlanCreated);
     };
-  }, []);
+    // Depende do recorte, não do objeto `user`: entrar ou sair do modo de visão
+    // troca quem a tela representa e precisa rebuscar. Com deps vazias, quem já
+    // estivesse nesta página continuaria vendo a lista anterior.
+  }, [user?.id, isAdmin]);
 
   const uniquePlans = [...new Set(
     partners
